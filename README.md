@@ -116,6 +116,15 @@ start (set `RUN_MIGRATIONS=false` to skip). The web image uses Next's standalone
 output. Provide the same env vars as `.env.example`. Kubo and IPFS Cluster use
 the official `ipfs/kubo` and `ipfs/ipfs-cluster` images.
 
+## Payload CMS integration
+
+[`packages/payload-storage-ipfs`](packages/payload-storage-ipfs) is a publishable
+Payload CMS v3 storage adapter: point your CMS's upload collections at this
+storage center and every asset is pinned to IPFS (via the ingest API), served
+from your gateway, and unpinned on delete. See its
+[README](packages/payload-storage-ipfs/README.md). Releases are managed with
+changesets (`pnpm changeset`).
+
 ## Tooling
 
 - **Turborepo** for task orchestration, **pnpm** workspaces.

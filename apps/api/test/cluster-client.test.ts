@@ -115,6 +115,15 @@ describe("ClusterClient", () => {
     });
   });
 
+  it("unpin DELETEs /pins/<cid> and tolerates 404", async () => {
+    const fetchImpl = mockFetch({ "/pins/": { status: 404, body: "" } });
+    const client = new ClusterClient("http://cluster:9094", fetchImpl);
+    await expect(client.unpin("bafycid")).resolves.toBeUndefined();
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(String(calls[0]?.[0])).toContain("/pins/bafycid");
+    expect(calls[0]?.[1]).toMatchObject({ method: "DELETE" });
+  });
+
   it("throws on non-ok responses", async () => {
     const fetchImpl = mockFetch({ "/peers": { status: 500, body: "boom" } });
     const client = new ClusterClient("http://cluster:9094", fetchImpl);

@@ -27,6 +27,7 @@ function fakeCluster(overrides: Partial<ClusterClient> = {}): ClusterClient {
       ipfsLinks: {},
     })),
     metrics: vi.fn(async () => []),
+    unpin: vi.fn(async () => {}),
     ...overrides,
   } as unknown as ClusterClient;
 }
@@ -39,6 +40,7 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     findApiKey: async (hashed) =>
       hashed === hashApiKey("k") ? { id: "key-1" } : undefined,
     recordUpload: vi.fn(async () => {}),
+    forgetUpload: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -81,6 +83,30 @@ describe("POST /ingest", () => {
       size: 11,
       apiKeyId: "key-1",
     });
+  });
+});
+
+describe("DELETE /ingest/:cid", () => {
+  it("rejects without an api key", async () => {
+    const cluster = fakeCluster();
+    const res = await createApp(makeDeps({ cluster })).request(
+      "/ingest/bafycid",
+      { method: "DELETE" },
+    );
+    expect(res.status).toBe(401);
+    expect(cluster.unpin).not.toHaveBeenCalled();
+  });
+
+  it("unpins and forgets the cid on a valid key", async () => {
+    const cluster = fakeCluster();
+    const forgetUpload = vi.fn(async () => {});
+    const res = await createApp(makeDeps({ cluster, forgetUpload })).request(
+      "/ingest/bafycid",
+      { method: "DELETE", headers: { "x-api-key": "k" } },
+    );
+    expect(res.status).toBe(200);
+    expect(cluster.unpin).toHaveBeenCalledWith("bafycid");
+    expect(forgetUpload).toHaveBeenCalledWith("bafycid");
   });
 });
 

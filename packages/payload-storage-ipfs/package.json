@@ -1,0 +1,47 @@
+{
+  "name": "payload-storage-ipfs",
+  "version": "0.1.0",
+  "description": "Payload CMS v3 storage adapter that pins uploads to IPFS via an IPFS Cluster ingest API and serves them from an IPFS gateway.",
+  "keywords": [
+    "payload",
+    "payloadcms",
+    "ipfs",
+    "ipfs-cluster",
+    "storage",
+    "adapter"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "check-types": "tsc --noEmit",
+    "prepublishOnly": "tsup"
+  },
+  "peerDependencies": {
+    "@payloadcms/plugin-cloud-storage": "^3.0.0",
+    "payload": "^3.0.0"
+  },
+  "devDependencies": {
+    "@payloadcms/plugin-cloud-storage": "^3.37.0",
+    "@repo/typescript-config": "workspace:*",
+    "payload": "^3.37.0",
+    "tsup": "^8.3.5",
+    "typescript": "5.9.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

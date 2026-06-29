@@ -13,10 +13,14 @@
     "db:migrate": "pnpm --filter @repo/db db:migrate",
     "infra:up": "docker compose up -d --wait postgres kubo cluster",
     "infra:down": "docker compose down",
-    "compose:full": "docker compose --profile apps up --build"
+    "compose:full": "docker compose --profile apps up --build",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "turbo run build --filter=payload-storage-ipfs && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.0",
+    "@changesets/cli": "^2.27.10",
     "turbo": "^2.10.0",
     "typescript": "5.9.2"
   },

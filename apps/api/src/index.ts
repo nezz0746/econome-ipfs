@@ -39,6 +39,9 @@ const app = createApp({
       apiKeyId: upload.apiKeyId,
     });
   },
+  async forgetUpload(cid: string) {
+    await db.delete(uploads).where(eq(uploads.cid, cid));
+  },
 });
 
 async function saveSnapshots(

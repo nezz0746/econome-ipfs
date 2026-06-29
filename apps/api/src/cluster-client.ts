@@ -128,6 +128,19 @@ export class ClusterClient {
     };
   }
 
+  /** Unpin a CID from the cluster (DELETE /pins/{cid}). */
+  async unpin(cid: string): Promise<void> {
+    const res = await this.fetchImpl(`${this.baseUrl}/pins/${cid}`, {
+      method: "DELETE",
+    });
+    // 404 means it wasn't pinned — treat as already-removed (idempotent).
+    if (!res.ok && res.status !== 404) {
+      throw new Error(
+        `Cluster unpin ${cid} failed: ${res.status} ${res.statusText}`,
+      );
+    }
+  }
+
   async peers(): Promise<ClusterPeer[]> {
     const raw = parseNdjson<Record<string, any>>(await this.getText("/peers"));
     return raw.map((p) => ({

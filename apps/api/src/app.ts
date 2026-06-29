@@ -19,6 +19,8 @@ export interface AppDeps {
   findApiKey: (hashedKey: string) => Promise<ApiKeyRecord | undefined>;
   /** Persist a successful ingest. */
   recordUpload: (upload: RecordedUpload) => Promise<void>;
+  /** Remove ingest records for a CID (called when it is unpinned). */
+  forgetUpload: (cid: string) => Promise<void>;
   replication: { min: number; max: number };
 }
 
@@ -56,6 +58,14 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
     });
 
     return c.json({ cid: result.cid, name: result.name, size: result.size });
+  });
+
+  // Unpin + forget a CID (used by external integrations on asset deletion).
+  app.delete("/ingest/:cid", apiKeyAuth(deps.findApiKey), async (c) => {
+    const cid = c.req.param("cid");
+    await deps.cluster.unpin(cid);
+    await deps.forgetUpload(cid);
+    return c.json({ cid, unpinned: true });
   });
 
   // ----- Cluster gateway (dashboard via Next BFF, internal-token gated) ---
