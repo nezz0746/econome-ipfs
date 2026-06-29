@@ -82,6 +82,11 @@ In the Compose service's **Domains** tab:
 - (Optional) Add a domain → service **`api`**, port **`8080`** if external
   machine clients will call `POST /ingest`. The dashboard itself reaches the API
   internally, so this isn't required.
+- (Optional) **IPFS gateway** — to serve files from your own node instead of a
+  public gateway, add a domain → service **`kubo`**, port **`8080`**, and set
+  `IPFS_GATEWAY_URL` to that domain. This is Kubo's HTTP gateway
+  (`/ipfs/<cid>`), distinct from the cluster (which only orchestrates pinning).
+  Otherwise leave `IPFS_GATEWAY_URL` as a public gateway like `https://ipfs.io`.
 
 Ports `4001` (kubo) and `9096` (cluster) are published at the host level for
 libp2p — make sure your server firewall allows them so participants can connect.

@@ -29,6 +29,9 @@ services:
       - ./infra/kubo/001-config.sh:/container-init.d/001-config.sh:ro
     ports:
       - "4001:4001" # libp2p swarm — publish so peers can reach this node
+    expose:
+      - "8080" # HTTP gateway — attach a Dokploy domain here and point
+      # IPFS_GATEWAY_URL at it to serve /ipfs/<cid> from your own node.
 
   cluster:
     image: ipfs/ipfs-cluster:latest
