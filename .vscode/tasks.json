@@ -1,0 +1,82 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Dev",
+      "detail": "Start infra (postgres, kubo, cluster) then run the web + api dev servers",
+      "type": "shell",
+      "command": "docker compose up -d --wait postgres kubo cluster && pnpm dev",
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Infra: Up",
+      "detail": "Start postgres, kubo and the IPFS cluster in Docker (waits for health)",
+      "type": "shell",
+      "command": "docker compose up -d --wait postgres kubo cluster",
+      "problemMatcher": []
+    },
+    {
+      "label": "Infra: Down",
+      "detail": "Stop all Docker services (data volumes persist)",
+      "type": "shell",
+      "command": "docker compose down",
+      "problemMatcher": []
+    },
+    {
+      "label": "Infra: Logs",
+      "detail": "Tail logs from the infra containers",
+      "type": "shell",
+      "command": "docker compose logs -f postgres kubo cluster",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Follower: Up",
+      "detail": "Start a sample participant follower (Kubo + ipfs-cluster-follow emulation)",
+      "type": "shell",
+      "command": "docker compose --profile follower up -d",
+      "problemMatcher": []
+    },
+    {
+      "label": "DB: Migrate",
+      "detail": "Apply Drizzle migrations to the local database",
+      "type": "shell",
+      "command": "pnpm db:migrate",
+      "problemMatcher": []
+    },
+    {
+      "label": "DB: Generate migration",
+      "detail": "Generate a new Drizzle migration from the schema",
+      "type": "shell",
+      "command": "pnpm db:generate",
+      "problemMatcher": []
+    },
+    {
+      "label": "Stack: Full (Docker)",
+      "detail": "Build and run the entire stack in Docker (infra + api + web)",
+      "type": "shell",
+      "command": "docker compose --profile apps up --build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Test",
+      "detail": "Run the test suite across the workspace",
+      "type": "shell",
+      "command": "pnpm test",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Lint",
+      "type": "shell",
+      "command": "pnpm lint",
+      "problemMatcher": []
+    }
+  ]
+}

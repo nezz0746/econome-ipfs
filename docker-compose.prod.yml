@@ -1,0 +1,93 @@
+name: econome
+
+# Production stack for Dokploy (or any Docker host). Unlike docker-compose.yml
+# (which is infra-only for local dev), this builds and runs everything with
+# named volumes. Provide all secrets via the environment — there are no dev
+# fallbacks here. See DEPLOYMENT.md.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-econome}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  kubo:
+    image: ipfs/kubo:latest
+    restart: unless-stopped
+    volumes:
+      - ipfs-data:/data/ipfs
+      - ./infra/kubo/001-config.sh:/container-init.d/001-config.sh:ro
+    ports:
+      - "4001:4001" # libp2p swarm — publish so peers can reach this node
+
+  cluster:
+    image: ipfs/ipfs-cluster:latest
+    restart: unless-stopped
+    depends_on:
+      - kubo
+    environment:
+      CLUSTER_SECRET: ${CLUSTER_SECRET:?set CLUSTER_SECRET}
+      CLUSTER_IPFSHTTP_NODEMULTIADDRESS: /dns4/kubo/tcp/5001
+      CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS: /ip4/0.0.0.0/tcp/9094
+      CLUSTER_CRDT_TRUSTEDPEERS: ${CLUSTER_TRUSTED_PEERS:-*}
+    volumes:
+      - cluster-data:/data/ipfs-cluster
+    ports:
+      - "9096:9096" # cluster swarm — publish so followers can bootstrap
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cluster:
+        condition: service_started
+    environment:
+      PORT: 8080
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      CLUSTER_API_URL: http://cluster:9094
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?set INTERNAL_TOKEN}
+      REPLICATION_MIN: ${REPLICATION_MIN:--1}
+      REPLICATION_MAX: ${REPLICATION_MAX:--1}
+      ACCOUNTING_INTERVAL_MS: ${ACCOUNTING_INTERVAL_MS:-60000}
+    expose:
+      - "8080" # internal; attach a Dokploy domain if you want it public
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      HONO_URL: http://api:8080
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?set INTERNAL_TOKEN}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set BETTER_AUTH_URL}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
+      IPFS_GATEWAY_URL: ${IPFS_GATEWAY_URL:-http://localhost:8081}
+      CLUSTER_NAME: ${CLUSTER_NAME:-econome}
+      CLUSTER_SECRET: ${CLUSTER_SECRET:?set CLUSTER_SECRET}
+      CLUSTER_BOOTSTRAP: ${CLUSTER_BOOTSTRAP:-}
+    expose:
+      - "3000" # attach your primary Dokploy domain to this service:port
+
+volumes:
+  pg-data:
+  ipfs-data:
+  cluster-data:

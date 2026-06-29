@@ -36,3 +36,13 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+# IPFS / cluster / postgres local data (docker volumes)
+ipfs-data/
+cluster-data/
+follower-data/
+follower-ipfs-data/
+pg-data/
+
+# Drizzle (keep migrations, ignore meta journal churn is fine to keep too)
+

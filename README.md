@@ -1,159 +1,126 @@
-# Turborepo starter
+# Econome — IPFS Storage Center
 
-This Turborepo starter is maintained by the Turborepo core team.
+A company-operated **private collaborative IPFS cluster** plus the software to
+run it. Your company runs the trusted cluster peer; vetted **participants** help
+secure storage by running a follower (Kubo + `ipfs-cluster-follow`) that
+replicates your pinset. Content ingested through the main node is automatically
+pinned and replicated out to participants.
 
-## Using this example
+## Architecture
 
-Run the following command:
-
-```sh
-npx create-turbo@latest
+```
+                    ┌────────────────────────────────────────┐
+   machine clients  │  COMPANY (docker)                       │
+   ──API key──▶ ┌───┴──┐   add+pin    ┌──────────────┐         │
+                │ Hono │ ───────────▶ │ ipfs-cluster │◀─┐      │
+   browser ▶ ┌──┤ API  │   REST 9094  │ (main peer)  │  │ CRDT │
+   (session) │  └───┬──┘              └──────┬───────┘  │      │
+        ┌─────┴──┐  │ internal token         │ proxy    │      │
+        │  Next  │──┘  ┌──────────┐          ▼          │      │
+        │  web   │─────│ Postgres │      ┌───────┐      │      │
+        └────────┘     └──────────┘      │ Kubo  │      │      │
+                                         └───────┘      │      │
+                    └───────────────────────────────────┼──────┘
+                                                         │ swarm/CRDT
+   PARTICIPANTS:  Kubo + ipfs-cluster-follow  ───────────┘
 ```
 
-## What's inside?
+- **`apps/web`** — Next 16 dashboard. Better Auth (multi-user), peer/follower
+  monitoring, cluster health, participant onboarding, API-key management, and a
+  test upload. Talks to the API server-side (BFF) with an internal token.
+- **`apps/api`** — Hono service. API-key-gated `/ingest` (→ cluster `/add`), a
+  typed gateway over the cluster REST API, and a periodic accounting job that
+  snapshots per-peer contribution into Postgres. Runs DB migrations on boot.
+- **`packages/db`** — Drizzle schema + client + migrations, shared by both apps.
+- **`packages/ui`**, **`packages/typescript-config`** — shared internals.
+- **`infra/`** — Kubo init script and cluster notes.
 
-This Turborepo includes the following packages/apps:
+## Local development
 
-### Apps and Packages
+Prerequisites: Docker + Docker Compose, Node ≥ 22, pnpm 9.
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+Local dev only uses Docker for the **infrastructure** (Postgres, Kubo, IPFS
+Cluster). The Next dashboard and Hono API run as plain dev servers — no image
+builds. Everything has sensible localhost dev defaults, so **no `.env` file is
+required**.
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```bash
+pnpm install
+docker compose up -d --wait postgres kubo cluster   # infra only
+pnpm dev                                             # web :3000 + api :8080
 ```
 
-Without global `turbo`, use your package manager:
+- Dashboard: http://localhost:3000 (create the first admin account on `/login`)
+- API health: http://localhost:8080/health
+- Cluster REST: http://localhost:9094
 
-```sh
-cd my-turborepo
-npx turbo build
-pnpm dlx turbo build
-pnpm exec turbo build
+### VS Code tasks
+
+`.vscode/tasks.json` wires this up so you don't have to remember commands
+(`Cmd/Ctrl-Shift-B` runs the default **Dev** task):
+
+| Task | What it does |
+| --- | --- |
+| **Dev** (default build) | Start infra (waits for health), then run web + api dev servers |
+| **Infra: Up / Down / Logs** | Manage the Docker infra |
+| **Follower: Up** | Start a sample participant follower |
+| **DB: Migrate / Generate migration** | Drizzle migrations |
+| **Stack: Full (Docker)** | Build + run the entire stack in containers |
+| **Test / Lint** | `pnpm test` / `pnpm lint` |
+
+The API applies DB migrations automatically on startup (with retry while
+Postgres comes up).
+
+### Other scripts
+
+```bash
+pnpm test           # vitest across packages
+pnpm check-types    # tsc across the workspace
+pnpm lint           # biome
+pnpm db:generate    # generate a new migration after editing the schema
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+### Emulating a participant follower
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo build --filter=docs
+```bash
+# After infra is up, copy the main cluster peer ID from its logs and set
+# CLUSTER_MAIN_PEER_MULTIADDR in .env, then:
+docker compose --profile follower up -d
 ```
 
-Without global `turbo`:
+This runs a second peer so you can watch the add → pin → replicate flow end to
+end on the Peers page.
 
-```sh
-npx turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+### Full containerized stack
+
+To run the apps in Docker too (closer to production):
+
+```bash
+docker compose --profile apps up --build
 ```
 
-### Develop
+## Deployment
 
-To develop all apps and packages, run the following command:
+See **[DEPLOYMENT.md](DEPLOYMENT.md)** for a full Dokploy walkthrough
+(`docker-compose.prod.yml`, env vars, domains, participant onboarding).
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+Each app also ships as its own image, so you can deploy on any container host:
 
-```sh
-cd my-turborepo
-turbo dev
+```bash
+docker build -f apps/api/Dockerfile -t econome-api .
+docker build -f apps/web/Dockerfile -t econome-web .
 ```
 
-Without global `turbo`, use your package manager:
+The API image runs the TypeScript entrypoint via `tsx` and applies migrations on
+start (set `RUN_MIGRATIONS=false` to skip). The web image uses Next's standalone
+output. Provide the same env vars as `.env.example`. Kubo and IPFS Cluster use
+the official `ipfs/kubo` and `ipfs/ipfs-cluster` images.
 
-```sh
-cd my-turborepo
-npx turbo dev
-pnpm exec turbo dev
-pnpm exec turbo dev
-```
+## Tooling
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+- **Turborepo** for task orchestration, **pnpm** workspaces.
+- **Biome** for lint + format (`pnpm lint`, `pnpm format`).
+- **Drizzle** migrations in `packages/db/drizzle`.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-pnpm exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-pnpm exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+See `docs/superpowers/specs/` and `docs/superpowers/plans/` for the design and
+implementation plan.

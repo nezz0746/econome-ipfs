@@ -1,17 +1,36 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
+  "globalEnv": [
+    "NODE_ENV",
+    "PORT",
+    "DATABASE_URL",
+    "CLUSTER_API_URL",
+    "INTERNAL_TOKEN",
+    "REPLICATION_MIN",
+    "REPLICATION_MAX",
+    "ACCOUNTING_INTERVAL_MS",
+    "HONO_URL",
+    "BETTER_AUTH_SECRET",
+    "BETTER_AUTH_URL",
+    "NEXT_PUBLIC_APP_URL",
+    "ENCRYPTION_KEY",
+    "IPFS_GATEWAY_URL",
+    "CLUSTER_NAME",
+    "CLUSTER_SECRET",
+    "CLUSTER_BOOTSTRAP"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
     },
-    "lint": {
-      "dependsOn": ["^lint"]
-    },
     "check-types": {
       "dependsOn": ["^check-types"]
+    },
+    "test": {
+      "dependsOn": ["^build"]
     },
     "dev": {
       "cache": false,

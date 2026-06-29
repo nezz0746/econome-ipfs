@@ -1,0 +1,12 @@
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+.git
+ipfs-data
+cluster-data
+follower-data
+follower-ipfs-data
+pg-data
+**/*.log
+docs

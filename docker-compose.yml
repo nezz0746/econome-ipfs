@@ -1,0 +1,124 @@
+name: econome
+
+# Default `docker compose up` starts ONLY the infrastructure (postgres, kubo,
+# cluster). Run the apps locally with `pnpm dev` (no image builds needed).
+#
+#   docker compose up -d                      # infra only (for local dev)
+#   docker compose --profile apps up --build  # full containerized stack
+#   docker compose --profile follower up      # add a sample participant peer
+#
+# All env vars have dev defaults, so none of this requires a .env file.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-econome}
+    volumes:
+      - ./pg-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  kubo:
+    image: ipfs/kubo:latest
+    restart: unless-stopped
+    volumes:
+      - ./ipfs-data:/data/ipfs
+      - ./infra/kubo/001-config.sh:/container-init.d/001-config.sh:ro
+    ports:
+      - "4001:4001" # swarm
+      - "8081:8080" # gateway (host 8081 to avoid clashing with the API)
+
+  cluster:
+    image: ipfs/ipfs-cluster:latest
+    restart: unless-stopped
+    depends_on:
+      - kubo
+    environment:
+      CLUSTER_SECRET: ${CLUSTER_SECRET:-}
+      CLUSTER_IPFSHTTP_NODEMULTIADDRESS: /dns4/kubo/tcp/5001
+      CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS: /ip4/0.0.0.0/tcp/9094
+      CLUSTER_CRDT_TRUSTEDPEERS: ${CLUSTER_TRUSTED_PEERS:-*}
+    volumes:
+      - ./cluster-data:/data/ipfs-cluster
+    ports:
+      - "9094:9094" # REST API
+      - "9096:9096" # cluster swarm
+
+  # ---- Full containerized stack (opt in: `--profile apps`) ----
+  api:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cluster:
+        condition: service_started
+    environment:
+      PORT: 8080
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/econome}
+      CLUSTER_API_URL: ${CLUSTER_API_URL:-http://cluster:9094}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-dev-internal-token}
+      REPLICATION_MIN: ${REPLICATION_MIN:--1}
+      REPLICATION_MAX: ${REPLICATION_MAX:--1}
+      ACCOUNTING_INTERVAL_MS: ${ACCOUNTING_INTERVAL_MS:-}
+    ports:
+      - "8080:8080"
+
+  web:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      HONO_URL: ${HONO_URL:-http://api:8080}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-dev-internal-token}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/econome}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-better-auth-secret-not-for-production}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-encryption-key-not-for-production}
+      IPFS_GATEWAY_URL: ${IPFS_GATEWAY_URL:-http://localhost:8081}
+      CLUSTER_NAME: ${CLUSTER_NAME:-econome}
+      CLUSTER_SECRET: ${CLUSTER_SECRET:-}
+      CLUSTER_BOOTSTRAP: ${CLUSTER_BOOTSTRAP:-}
+    ports:
+      - "3000:3000"
+
+  # ---- Local follower emulation (opt in: `--profile follower`) ----
+  follower-kubo:
+    image: ipfs/kubo:latest
+    profiles: ["follower"]
+    restart: unless-stopped
+    volumes:
+      - ./follower-ipfs-data:/data/ipfs
+      - ./infra/kubo/001-config.sh:/container-init.d/001-config.sh:ro
+
+  follower-cluster:
+    image: ipfs/ipfs-cluster:latest
+    profiles: ["follower"]
+    restart: unless-stopped
+    depends_on:
+      - follower-kubo
+    environment:
+      CLUSTER_SECRET: ${CLUSTER_SECRET:-}
+      CLUSTER_IPFSHTTP_NODEMULTIADDRESS: /dns4/follower-kubo/tcp/5001
+      CLUSTER_CRDT_TRUSTEDPEERS: ${CLUSTER_TRUSTED_PEERS:-*}
+      # Set CLUSTER_MAIN_PEER_MULTIADDR in .env after first boot so the
+      # follower bootstraps to the main peer.
+      CLUSTER_PEERADDRESSES: ${CLUSTER_MAIN_PEER_MULTIADDR:-}
+    volumes:
+      - ./follower-data:/data/ipfs-cluster

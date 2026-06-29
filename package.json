@@ -4,17 +4,32 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types"
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "check-types": "turbo run check-types",
+    "test": "turbo run test",
+    "db:generate": "pnpm --filter @repo/db db:generate",
+    "db:migrate": "pnpm --filter @repo/db db:migrate",
+    "infra:up": "docker compose up -d --wait postgres kubo cluster",
+    "infra:down": "docker compose down",
+    "compose:full": "docker compose --profile apps up --build"
   },
   "devDependencies": {
-    "prettier": "^3.7.4",
+    "@biomejs/biome": "^2.2.0",
     "turbo": "^2.10.0",
     "typescript": "5.9.2"
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {
     "node": ">=18"
+  },
+  "pnpm": {
+    "neverBuiltDependencies": [
+      "esbuild"
+    ],
+    "overrides": {
+      "esbuild": "0.25.12"
+    }
   }
 }
