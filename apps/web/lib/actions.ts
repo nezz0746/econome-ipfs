@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { ingest } from "@/lib/api";
 import { auth } from "@/lib/auth";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/upload-config";
 
 async function requireUserId(): Promise<string> {
   const { headers } = await import("next/headers");
@@ -62,21 +63,36 @@ export async function createOnboardingToken(formData: FormData): Promise<void> {
   revalidatePath("/dashboard/onboarding");
 }
 
-/** Forward a test upload through the API ingest endpoint. */
-export async function testUpload(
-  formData: FormData,
-): Promise<{ cid?: string; error?: string }> {
+export interface UploadResult {
+  name: string;
+  cid?: string;
+  error?: string;
+}
+
+/**
+ * Forward a single test upload through the API ingest endpoint. The client
+ * calls this once per file so each file gets its own request (and its own
+ * {@link MAX_UPLOAD_BYTES} budget) rather than sharing one body limit.
+ */
+export async function testUpload(formData: FormData): Promise<UploadResult> {
   await requireUserId();
   const apiKey = String(formData.get("apiKey") ?? "");
   const file = formData.get("file");
-  if (!apiKey) return { error: "API key required" };
+  const name = file instanceof File ? file.name : "file";
+  if (!apiKey) return { name, error: "API key required" };
   if (!(file instanceof File) || file.size === 0) {
-    return { error: "Choose a file" };
+    return { name, error: "Choose a file" };
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return { name, error: `Too large (max ${MAX_UPLOAD_MB} MB)` };
   }
   try {
     const result = await ingest(apiKey, file);
-    return { cid: result.cid };
+    return { name, cid: result.cid };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "upload failed" };
+    return {
+      name,
+      error: err instanceof Error ? err.message : "upload failed",
+    };
   }
 }

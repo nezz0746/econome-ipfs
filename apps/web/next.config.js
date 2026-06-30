@@ -13,6 +13,12 @@ const nextConfig = {
   turbopack: { root: monorepoRoot },
   outputFileTracingRoot: monorepoRoot,
   transpilePackages: ["@repo/ui", "@repo/db"],
+  experimental: {
+    // Test uploads are forwarded through a Server Action; raise the default
+    // 1 MB body cap. Headroom above the 10 MB per-file limit (lib/upload-config)
+    // covers multipart boundaries and the api-key form field.
+    serverActions: { bodySizeLimit: "12mb" },
+  },
 };
 
 export default nextConfig;
