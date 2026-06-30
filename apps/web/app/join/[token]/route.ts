@@ -1,7 +1,10 @@
 import { getDb, onboardingTokens } from "@repo/db";
 import { eq } from "drizzle-orm";
 
-import { buildDockerJoinScript, buildFollowerBundle } from "@/lib/cluster-config";
+import {
+  buildDockerJoinScript,
+  buildFollowerBundle,
+} from "@/lib/cluster-config";
 
 // Public, token-gated endpoint — no session. The onboarding token is the
 // credential. Always rendered dynamically (DB lookup + live cluster env).

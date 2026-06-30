@@ -1,6 +1,6 @@
 import { getDb, onboardingTokens } from "@repo/db";
 import { desc } from "drizzle-orm";
-
+import { CopyButton } from "@/components/copy-button";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CopyButton } from "@/components/copy-button";
 import { createOnboardingToken } from "@/lib/actions";
 import { buildFollowerBundle, joinCommand } from "@/lib/cluster-config";
 
