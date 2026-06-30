@@ -21,8 +21,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CopyButton } from "@/components/copy-button";
 import { createOnboardingToken } from "@/lib/actions";
-import { buildFollowerBundle } from "@/lib/cluster-config";
+import { buildFollowerBundle, joinCommand } from "@/lib/cluster-config";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,25 @@ export default async function OnboardingPage() {
           </dl>
           <div>
             <p className="mb-1 text-sm text-muted-foreground">
-              One-line join command
+              One-line join command (Docker)
+            </p>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Mint a token below, then have the participant run its command.
+              Requires only Docker — it starts a Kubo + ipfs-cluster follower.
+            </p>
+            <div className="flex items-center gap-1">
+              <code className="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm break-all">
+                {joinCommand("<token>")}
+              </code>
+              <CopyButton
+                value={joinCommand("<token>")}
+                label="Command copied"
+              />
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-sm text-muted-foreground">
+              Manual (no Docker)
             </p>
             <div className="rounded-md bg-muted px-3 py-2 font-mono text-sm break-all">
               {bundle.command}
@@ -110,7 +129,7 @@ export default async function OnboardingPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Label</TableHead>
-                  <TableHead>Token</TableHead>
+                  <TableHead>Join command</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Created</TableHead>
                 </TableRow>
@@ -121,8 +140,16 @@ export default async function OnboardingPage() {
                     <TableCell className="font-medium">
                       {token.label ?? "—"}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {token.token}
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <code className="max-w-80 truncate font-mono text-xs">
+                          {joinCommand(token.token)}
+                        </code>
+                        <CopyButton
+                          value={joinCommand(token.token)}
+                          label="Command copied"
+                        />
+                      </div>
                     </TableCell>
                     <TableCell>
                       {token.usedByPeerId ? (
