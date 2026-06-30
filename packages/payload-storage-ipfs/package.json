@@ -1,6 +1,6 @@
 {
   "name": "@leconome/payload-storage-ipfs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Payload CMS v3 storage adapter that pins uploads to IPFS via an IPFS Cluster ingest API and serves them from an IPFS gateway.",
   "keywords": [
     "payload",
