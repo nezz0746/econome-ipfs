@@ -1,14 +1,21 @@
 {
   "name": "@leconome/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One-command CLI to join the Econome IPFS cluster as a follower.",
-  "keywords": ["ipfs", "ipfs-cluster", "econome", "cli"],
+  "keywords": [
+    "ipfs",
+    "ipfs-cluster",
+    "econome",
+    "cli"
+  ],
   "license": "MIT",
   "type": "module",
   "bin": {
     "econome": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=18"
   },
