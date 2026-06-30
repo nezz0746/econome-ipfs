@@ -1,0 +1,35 @@
+{
+  "name": "@leconome/cli",
+  "version": "0.1.0",
+  "description": "One-command CLI to join the Econome IPFS cluster as a follower.",
+  "keywords": ["ipfs", "ipfs-cluster", "econome", "cli"],
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "econome": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "tsup"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "commander": "^14.0.0"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "tsup": "^8.3.5",
+    "typescript": "5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

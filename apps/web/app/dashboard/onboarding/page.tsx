@@ -22,7 +22,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createOnboardingToken } from "@/lib/actions";
-import { buildFollowerBundle, joinCommand } from "@/lib/cluster-config";
+import {
+  buildFollowerBundle,
+  joinCommand,
+  npxJoinCommand,
+} from "@/lib/cluster-config";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +76,7 @@ export default async function OnboardingPage() {
           </dl>
           <div>
             <p className="mb-1 text-sm text-muted-foreground">
-              One-line join command (Docker)
+              One-line join command
             </p>
             <p className="mb-2 text-xs text-muted-foreground">
               Mint a token below, then have the participant run its command.
@@ -80,12 +84,18 @@ export default async function OnboardingPage() {
             </p>
             <div className="flex items-center gap-1">
               <code className="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm break-all">
-                {joinCommand("<token>")}
+                {npxJoinCommand("<token>")}
               </code>
               <CopyButton
-                value={joinCommand("<token>")}
+                value={npxJoinCommand("<token>")}
                 label="Command copied"
               />
+            </div>
+            <p className="mt-2 mb-1 text-sm text-muted-foreground">
+              Or, no Node — curl | bash
+            </p>
+            <div className="rounded-md bg-muted px-3 py-2 font-mono text-sm break-all">
+              {joinCommand("<token>")}
             </div>
           </div>
           <div>
@@ -142,10 +152,10 @@ export default async function OnboardingPage() {
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <code className="max-w-80 truncate font-mono text-xs">
-                          {joinCommand(token.token)}
+                          {npxJoinCommand(token.token)}
                         </code>
                         <CopyButton
-                          value={joinCommand(token.token)}
+                          value={npxJoinCommand(token.token)}
                           label="Command copied"
                         />
                       </div>
