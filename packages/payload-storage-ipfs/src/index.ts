@@ -123,7 +123,7 @@ function ipfsAdapter(options: IpfsStorageOptions): Adapter {
  *
  * @example
  * ```ts
- * import { ipfsStorage } from "payload-storage-ipfs";
+ * import { ipfsStorage } from "@leconome/payload-storage-ipfs";
  *
  * export default buildConfig({
  *   plugins: [

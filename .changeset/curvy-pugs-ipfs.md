@@ -1,5 +1,5 @@
 ---
-"payload-storage-ipfs": minor
+"@leconome/payload-storage-ipfs": minor
 ---
 
 Initial release. A Payload CMS v3 storage adapter that routes upload-collection

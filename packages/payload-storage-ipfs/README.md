@@ -1,4 +1,4 @@
-# payload-storage-ipfs
+# @leconome/payload-storage-ipfs
 
 A [Payload CMS](https://payloadcms.com) **v3** storage adapter that routes
 upload-collection files to **IPFS**. Each upload is pinned through an IPFS
@@ -12,7 +12,7 @@ contract below.
 ## Install
 
 ```bash
-pnpm add payload-storage-ipfs @payloadcms/plugin-cloud-storage
+pnpm add @leconome/payload-storage-ipfs @payloadcms/plugin-cloud-storage
 ```
 
 `payload` and `@payloadcms/plugin-cloud-storage` are peer dependencies.
@@ -21,7 +21,7 @@ pnpm add payload-storage-ipfs @payloadcms/plugin-cloud-storage
 
 ```ts
 import { buildConfig } from "payload";
-import { ipfsStorage } from "payload-storage-ipfs";
+import { ipfsStorage } from "@leconome/payload-storage-ipfs";
 
 export default buildConfig({
   collections: [

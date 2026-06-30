@@ -16,7 +16,7 @@
     "compose:full": "docker compose --profile apps up --build",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "turbo run build --filter=payload-storage-ipfs && changeset publish"
+    "release": "turbo run build --filter=@leconome/payload-storage-ipfs && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.0",

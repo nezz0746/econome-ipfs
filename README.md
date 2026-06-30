@@ -118,7 +118,7 @@ the official `ipfs/kubo` and `ipfs/ipfs-cluster` images.
 
 ## Payload CMS integration
 
-[`packages/payload-storage-ipfs`](packages/payload-storage-ipfs) is a publishable
+[`@leconome/payload-storage-ipfs`](packages/payload-storage-ipfs) is a publishable
 Payload CMS v3 storage adapter: point your CMS's upload collections at this
 storage center and every asset is pinned to IPFS (via the ingest API), served
 from your gateway, and unpinned on delete. See its
