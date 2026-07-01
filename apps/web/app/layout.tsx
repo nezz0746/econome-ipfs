@@ -12,7 +12,7 @@ const fontMono = localFont({
   src: "./fonts/GeistMonoVF.woff",
   variable: "--font-mono",
 });
-// Econome brand display face (weight 700 only) — headings & logo. Body stays Geist.
+// Econome brand display face (weight 700 only) — brand wordmark/logo only. Body & headings stay Geist.
 const fontHeading = localFont({
   src: "./fonts/AntiqueOliveNord.woff",
   weight: "700",

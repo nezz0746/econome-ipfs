@@ -1,25 +1,29 @@
 import type { NewContributionSnapshot } from "@repo/db";
 
-import type { ClusterClient, ClusterPeer, PinInfo } from "./cluster-client";
+import type { ClusterClient, ClusterPeer, PinStatus } from "./cluster-client";
 
 /**
  * Build per-peer contribution snapshots from the current cluster state.
  * Pure function so it is trivially testable.
  *
- * - `cidCount`  = number of pins allocated to the peer
+ * Holdings come from the pin status `peer_map`, not pin `allocations`: a
+ * collaborative "pin-everywhere" cluster (replication factor -1) leaves
+ * allocations empty, so the status is the only record of what a peer holds.
+ *
+ * - `cidCount`  = number of CIDs the peer has pinned
  * - `online`    = peer reported no error in /peers
  * - `bytesHeld` = sum of resolved sizes for the peer's pins (0 when unknown)
  */
 export function buildSnapshots(
   peers: ClusterPeer[],
-  pins: PinInfo[],
+  statuses: PinStatus[],
   sizeByCid: Map<string, number>,
   capturedAt: Date,
 ): NewContributionSnapshot[] {
   return peers.map((peer) => {
-    const held = pins.filter((pin) => pin.allocations.includes(peer.id));
+    const held = statuses.filter((s) => s.peers[peer.id]?.status === "pinned");
     const bytesHeld = held.reduce(
-      (sum, pin) => sum + (sizeByCid.get(pin.cid) ?? 0),
+      (sum, s) => sum + (sizeByCid.get(s.cid) ?? 0),
       0,
     );
     return {
@@ -46,13 +50,13 @@ export interface AccountingDeps {
 
 /** Fetch current cluster state and persist a contribution snapshot batch. */
 export async function runAccountingJob(deps: AccountingDeps): Promise<number> {
-  const [peers, pins] = await Promise.all([
+  const [peers, statuses] = await Promise.all([
     deps.cluster.peers(),
-    deps.cluster.pins(),
+    deps.cluster.pinStatuses(),
   ]);
-  const sizeByCid = await deps.resolveSizes(pins.map((p) => p.cid));
+  const sizeByCid = await deps.resolveSizes(statuses.map((s) => s.cid));
   const capturedAt = deps.now();
-  const snapshots = buildSnapshots(peers, pins, sizeByCid, capturedAt);
+  const snapshots = buildSnapshots(peers, statuses, sizeByCid, capturedAt);
   await deps.saveSnapshots(snapshots, capturedAt);
   return snapshots.length;
 }

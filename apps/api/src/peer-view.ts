@@ -53,11 +53,21 @@ export interface PeerViewInput {
   participants: ParticipantRow[];
 }
 
+/**
+ * CIDs a peer has actually synced, taken from the pin status `peer_map`.
+ * We can't use pin `allocations`: in a collaborative "pin-everywhere" cluster
+ * (replication factor -1) allocations are always empty, so the real record of
+ * what a peer holds is its per-CID pin status.
+ */
+function heldByPeer(peerId: string, input: PeerViewInput): PinStatus[] {
+  return input.statuses.filter((s) => s.peers[peerId]?.status === "pinned");
+}
+
 function enrichOne(peer: ClusterPeer, input: PeerViewInput): EnrichedPeer {
   const publicIp = extractPublicIp(peer.addresses);
-  const held = input.pins.filter((pin) => pin.allocations.includes(peer.id));
+  const held = heldByPeer(peer.id, input);
   const bytesHeld = held.reduce(
-    (sum, pin) => sum + (input.sizeByCid.get(pin.cid) ?? 0),
+    (sum, s) => sum + (input.sizeByCid.get(s.cid) ?? 0),
     0,
   );
   const participant = input.participants.find((p) => p.peerId === peer.id);
@@ -88,25 +98,16 @@ export function buildPeerDetail(
   const peer = input.peers.find((p) => p.id === peerId);
   if (!peer) return null;
   const base = enrichOne(peer, input);
-  const statusByCid = new Map(
-    input.statuses.map(
-      (s): [string, { status: string; timestamp: string } | undefined] => [
-        s.cid,
-        s.peers[peerId],
-      ],
-    ),
-  );
-  const files: PeerFile[] = input.pins
-    .filter((pin) => pin.allocations.includes(peerId))
-    .map((pin) => {
-      const st = statusByCid.get(pin.cid);
-      return {
-        cid: pin.cid,
-        name: pin.name,
-        size: input.sizeByCid.get(pin.cid) ?? null,
-        syncedAt: st?.timestamp || null,
-        status: st?.status ?? "unknown",
-      };
-    });
+  const nameByCid = new Map(input.pins.map((pin) => [pin.cid, pin.name]));
+  const files: PeerFile[] = heldByPeer(peerId, input).map((s) => {
+    const st = s.peers[peerId];
+    return {
+      cid: s.cid,
+      name: nameByCid.get(s.cid) ?? "",
+      size: input.sizeByCid.get(s.cid) ?? null,
+      syncedAt: st?.timestamp || null,
+      status: st?.status ?? "unknown",
+    };
+  });
   return { ...base, addresses: peer.addresses, files, snapshots };
 }

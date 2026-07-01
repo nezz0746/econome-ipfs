@@ -1,0 +1,87 @@
+import { describe, expect, it } from "vitest";
+
+import type { ClusterPeer, PinInfo, PinStatus } from "../src/cluster-client";
+import {
+  buildEnrichedPeers,
+  buildPeerDetail,
+  type PeerViewInput,
+} from "../src/peer-view";
+
+const peers: ClusterPeer[] = [
+  { id: "peer-a", peername: "main", addresses: [] },
+  { id: "peer-b", peername: "follower", addresses: [] },
+];
+
+// Collaborative "pin-everywhere" cluster (replication factor -1): the pinset
+// carries EMPTY allocations. Real per-peer holdings live in the status peer_map.
+const pins: PinInfo[] = [
+  {
+    cid: "c1",
+    name: "one",
+    allocations: [],
+    replicationFactorMin: -1,
+    replicationFactorMax: -1,
+  },
+  {
+    cid: "c2",
+    name: "two",
+    allocations: [],
+    replicationFactorMin: -1,
+    replicationFactorMax: -1,
+  },
+];
+
+const statuses: PinStatus[] = [
+  {
+    cid: "c1",
+    peers: {
+      "peer-a": { status: "pinned", timestamp: "2026-07-01T00:00:00Z" },
+      "peer-b": { status: "pinned", timestamp: "2026-07-01T00:00:00Z" },
+    },
+  },
+  {
+    cid: "c2",
+    peers: {
+      "peer-a": { status: "pinned", timestamp: "2026-07-01T00:00:00Z" },
+      // peer-b is still syncing this one — not yet "synced".
+      "peer-b": { status: "pinning", timestamp: "2026-07-01T00:00:00Z" },
+    },
+  },
+];
+
+const input: PeerViewInput = {
+  peers,
+  pins,
+  statuses,
+  sizeByCid: new Map([
+    ["c1", 100],
+    ["c2", 50],
+  ]),
+  geoByIp: new Map(),
+  participants: [],
+};
+
+describe("buildEnrichedPeers (pin-everywhere cluster)", () => {
+  it("attributes holdings from the status peer_map, not allocations", () => {
+    const byId = new Map(buildEnrichedPeers(input).map((p) => [p.id, p]));
+    const a = byId.get("peer-a");
+    const b = byId.get("peer-b");
+    expect(a?.fileCount).toBe(2);
+    expect(a?.bytesHeld).toBe(150);
+    // peer-b has c1 pinned but c2 still pinning → only one file synced.
+    expect(b?.fileCount).toBe(1);
+    expect(b?.bytesHeld).toBe(100);
+  });
+});
+
+describe("buildPeerDetail (pin-everywhere cluster)", () => {
+  it("lists synced files from the peer_map with names, sizes and timestamps", () => {
+    const detail = buildPeerDetail("peer-a", input, []);
+    expect(detail?.files.map((f) => f.cid).sort()).toEqual(["c1", "c2"]);
+    expect(detail?.files.every((f) => f.status === "pinned")).toBe(true);
+    const c1 = detail?.files.find((f) => f.cid === "c1");
+    expect(c1?.name).toBe("one");
+    expect(c1?.size).toBe(100);
+    expect(c1?.syncedAt).toBe("2026-07-01T00:00:00Z");
+  });
+});

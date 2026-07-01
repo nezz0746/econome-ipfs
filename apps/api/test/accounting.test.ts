@@ -4,7 +4,7 @@ import { buildSnapshots, runAccountingJob } from "../src/accounting";
 import type {
   ClusterClient,
   ClusterPeer,
-  PinInfo,
+  PinStatus,
 } from "../src/cluster-client";
 
 const peers: ClusterPeer[] = [
@@ -12,31 +12,32 @@ const peers: ClusterPeer[] = [
   { id: "peer-b", peername: "follower", addresses: [], error: "down" },
 ];
 
-const pins: PinInfo[] = [
+// Holdings come from the status peer_map. Allocations are irrelevant (and empty
+// in a real collaborative cluster): peer-a has both CIDs pinned, peer-b only c1.
+const statuses: PinStatus[] = [
   {
     cid: "c1",
-    name: "",
-    allocations: ["peer-a", "peer-b"],
-    replicationFactorMin: 2,
-    replicationFactorMax: 2,
+    peers: {
+      "peer-a": { status: "pinned", timestamp: "" },
+      "peer-b": { status: "pinned", timestamp: "" },
+    },
   },
   {
     cid: "c2",
-    name: "",
-    allocations: ["peer-a"],
-    replicationFactorMin: 1,
-    replicationFactorMax: 1,
+    peers: {
+      "peer-a": { status: "pinned", timestamp: "" },
+    },
   },
 ];
 
 describe("buildSnapshots", () => {
-  it("counts pins per peer and flags online status", () => {
+  it("counts pinned CIDs per peer and flags online status", () => {
     const at = new Date("2026-06-29T00:00:00Z");
     const sizeByCid = new Map([
       ["c1", 100],
       ["c2", 50],
     ]);
-    const snaps = buildSnapshots(peers, pins, sizeByCid, at);
+    const snaps = buildSnapshots(peers, statuses, sizeByCid, at);
 
     expect(snaps).toEqual([
       {
@@ -61,7 +62,7 @@ describe("runAccountingJob", () => {
   it("fetches state, builds and saves snapshots", async () => {
     const cluster = {
       peers: vi.fn(async () => peers),
-      pins: vi.fn(async () => pins),
+      pinStatuses: vi.fn(async () => statuses),
     } as unknown as ClusterClient;
     const saveSnapshots = vi.fn(async () => {});
     const at = new Date("2026-06-29T12:00:00Z");
