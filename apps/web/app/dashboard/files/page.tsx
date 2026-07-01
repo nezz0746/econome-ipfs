@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { timeAgo } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -120,8 +121,11 @@ export default async function FilesPage({
                       <TableCell className="text-muted-foreground">
                         {formatBytes(file.size)}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {file.createdAt.toISOString().slice(0, 10)}
+                      <TableCell
+                        className="whitespace-nowrap text-muted-foreground"
+                        title={file.createdAt.toISOString()}
+                      >
+                        {timeAgo(file.createdAt)}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
