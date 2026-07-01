@@ -4,6 +4,7 @@ import { logger } from "hono/logger";
 
 import { type ApiKeyRecord, apiKeyAuth, internalAuth } from "./auth";
 import type { ClusterClient } from "./cluster-client";
+import type { PeerService } from "./peer-service";
 
 export interface RecordedUpload {
   cid: string;
@@ -22,6 +23,8 @@ export interface AppDeps {
   /** Remove ingest records for a CID (called when it is unpinned). */
   forgetUpload: (cid: string) => Promise<void>;
   replication: { min: number; max: number };
+  /** Enriched peer views (files, geo, bytes, history) for the dashboard. */
+  peerService: PeerService;
 }
 
 type Variables = { apiKeyId: string };
@@ -73,6 +76,13 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
   gateway.use("*", internalAuth(deps.internalToken));
 
   gateway.get("/peers", async (c) => c.json(await deps.cluster.peers()));
+  gateway.get("/peers/enriched", async (c) =>
+    c.json(await deps.peerService.enrichedPeers()),
+  );
+  gateway.get("/peers/:peerId", async (c) => {
+    const detail = await deps.peerService.peerDetail(c.req.param("peerId"));
+    return detail ? c.json(detail) : c.json({ error: "peer not found" }, 404);
+  });
   gateway.get("/pins", async (c) => c.json(await deps.cluster.pins()));
   gateway.get("/health", async (c) => c.json(await deps.cluster.healthGraph()));
 

@@ -74,3 +74,66 @@ export async function ingest(
   }
   return res.json() as Promise<{ cid: string; name: string; size: number }>;
 }
+
+export interface Geo {
+  ip: string;
+  countryCode: string;
+  country: string;
+  city: string;
+  lat: number;
+  lon: number;
+}
+
+export interface EnrichedPeer {
+  id: string;
+  peername: string;
+  ipfsId?: string;
+  version?: string;
+  online: boolean;
+  publicIp: string | null;
+  geo: Geo | null;
+  bytesHeld: number;
+  fileCount: number;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+}
+
+export interface PeerFile {
+  cid: string;
+  name: string;
+  size: number | null;
+  syncedAt: string | null;
+  status: string;
+}
+
+export interface PeerSnapshot {
+  capturedAt: string;
+  bytesHeld: number;
+  cidCount: number;
+  online: boolean;
+}
+
+export interface PeerDetail extends EnrichedPeer {
+  addresses: string[];
+  files: PeerFile[];
+  snapshots: PeerSnapshot[];
+}
+
+export function getEnrichedPeers(): Promise<EnrichedPeer[]> {
+  return gatewayFetch<EnrichedPeer[]>("/peers/enriched");
+}
+
+export async function getPeerDetail(
+  peerId: string,
+): Promise<PeerDetail | null> {
+  const res = await fetch(
+    `${HONO_URL}/cluster/peers/${encodeURIComponent(peerId)}`,
+    {
+      headers: { "x-internal-token": INTERNAL_TOKEN },
+      cache: "no-store",
+    },
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`API /peers/${peerId} failed: ${res.status}`);
+  return res.json() as Promise<PeerDetail>;
+}

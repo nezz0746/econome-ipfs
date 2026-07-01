@@ -17,6 +17,7 @@ function requireInProd(name: string, devValue: string): string {
 export interface Config {
   port: number;
   clusterApiUrl: string;
+  ipfsApiUrl: string;
   internalToken: string;
   replication: { min: number; max: number };
   accountingIntervalMs: number | null;
@@ -26,6 +27,7 @@ export function loadConfig(): Config {
   return {
     port: Number(process.env.PORT ?? 8080),
     clusterApiUrl: process.env.CLUSTER_API_URL ?? "http://localhost:9094",
+    ipfsApiUrl: process.env.IPFS_API_URL ?? "http://localhost:5001",
     internalToken: requireInProd("INTERNAL_TOKEN", DEV_INTERNAL_TOKEN),
     replication: {
       min: Number(process.env.REPLICATION_MIN ?? -1),

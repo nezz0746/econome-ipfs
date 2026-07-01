@@ -15,6 +15,13 @@
       "when": 1782759082295,
       "tag": "0001_broken_vargas",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782942866999,
+      "tag": "0002_confused_tombstone",
+      "breakpoints": true
     }
   ]
 }

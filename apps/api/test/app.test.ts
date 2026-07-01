@@ -41,6 +41,10 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
       hashed === hashApiKey("k") ? { id: "key-1" } : undefined,
     recordUpload: vi.fn(async () => {}),
     forgetUpload: vi.fn(async () => {}),
+    peerService: {
+      enrichedPeers: async () => [],
+      peerDetail: async () => null,
+    },
     ...overrides,
   };
 }

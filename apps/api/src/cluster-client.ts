@@ -46,6 +46,12 @@ export interface Metric {
   valid: boolean;
 }
 
+export interface PinStatus {
+  cid: string;
+  /** peerId -> its status + last status-change timestamp for this CID. */
+  peers: Record<string, { status: string; timestamp: string }>;
+}
+
 /** Normalize a cluster CID field which may be a string or `{ "/": "<cid>" }`. */
 function normalizeCid(cid: unknown): string {
   if (typeof cid === "string") return cid;
@@ -164,6 +170,26 @@ export class ClusterClient {
       replicationFactorMin: Number(p.replication_factor_min ?? -1),
       replicationFactorMax: Number(p.replication_factor_max ?? -1),
     }));
+  }
+
+  /**
+   * Per-CID, per-peer pin status. Uses the cluster status stream (/pins), whose
+   * GlobalPinInfo objects carry a peer_map of {status, timestamp}. Used to show
+   * which files a peer holds and when each finished pinning.
+   */
+  async pinStatuses(): Promise<PinStatus[]> {
+    const raw = parseNdjson<Record<string, any>>(await this.getText("/pins"));
+    return raw.map((p) => {
+      const peerMap = (p.peer_map ?? {}) as Record<string, any>;
+      const peers: PinStatus["peers"] = {};
+      for (const [peerId, info] of Object.entries(peerMap)) {
+        peers[peerId] = {
+          status: String(info?.status ?? "unknown"),
+          timestamp: String(info?.timestamp ?? ""),
+        };
+      }
+      return { cid: normalizeCid(p.cid), peers };
+    });
   }
 
   async healthGraph(): Promise<HealthGraph> {

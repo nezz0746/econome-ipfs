@@ -129,4 +129,33 @@ describe("ClusterClient", () => {
     const client = new ClusterClient("http://cluster:9094", fetchImpl);
     await expect(client.peers()).rejects.toThrow(/failed: 500/);
   });
+
+  it("parses /pins global status into per-peer status + timestamp", async () => {
+    const fetchImpl = mockFetch({
+      "/pins": {
+        body: `${JSON.stringify({
+          cid: { "/": "bafyc1" },
+          peer_map: {
+            "peer-a": { status: "pinned", timestamp: "2026-06-30T10:00:00Z" },
+            "peer-b": {
+              status: "pinning",
+              timestamp: "2026-06-30T10:05:00Z",
+            },
+          },
+        })}\n`,
+      },
+    });
+    const client = new ClusterClient("http://cluster:9094", fetchImpl);
+
+    const statuses = await client.pinStatuses();
+
+    expect(statuses).toHaveLength(1);
+    const first = statuses[0];
+    expect(first?.cid).toBe("bafyc1");
+    expect(first?.peers["peer-a"]).toEqual({
+      status: "pinned",
+      timestamp: "2026-06-30T10:00:00Z",
+    });
+    expect(first?.peers["peer-b"]?.status).toBe("pinning");
+  });
 });

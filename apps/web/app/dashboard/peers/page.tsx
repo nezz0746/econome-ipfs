@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,15 +10,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getPeers } from "@/lib/api";
+import { getEnrichedPeers } from "@/lib/api";
+import { formatBytes } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+function flag(countryCode: string): string {
+  if (countryCode.length !== 2) return "";
+  return String.fromCodePoint(
+    ...[...countryCode.toUpperCase()].map(
+      (c) => 0x1f1e6 + c.charCodeAt(0) - 65,
+    ),
+  );
+}
+
 export default async function PeersPage() {
-  let peers: Awaited<ReturnType<typeof getPeers>> = [];
+  let peers: Awaited<ReturnType<typeof getEnrichedPeers>> = [];
   let error: string | null = null;
   try {
-    peers = await getPeers();
+    peers = await getEnrichedPeers();
   } catch (err) {
     error = err instanceof Error ? err.message : "Cluster unreachable";
   }
@@ -26,9 +37,8 @@ export default async function PeersPage() {
     <>
       <PageHeader
         title="Peers & Followers"
-        description="Cluster peers and participant followers, with reachability status."
+        description="Cluster peers and participant followers — location, data held, and reachability."
       />
-
       <Card>
         <CardContent>
           {error ? (
@@ -41,9 +51,11 @@ export default async function PeersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Peer name</TableHead>
-                  <TableHead>Peer ID</TableHead>
-                  <TableHead>IPFS ID</TableHead>
+                  <TableHead>Peer</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TableHead>IP</TableHead>
+                  <TableHead className="text-right">Data held</TableHead>
+                  <TableHead className="text-right">Files</TableHead>
                   <TableHead className="text-right">Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -51,19 +63,32 @@ export default async function PeersPage() {
                 {peers.map((peer) => (
                   <TableRow key={peer.id}>
                     <TableCell className="font-medium">
-                      {peer.peername || "—"}
+                      <Link
+                        href={`/dashboard/peers/${encodeURIComponent(peer.id)}`}
+                        className="hover:underline"
+                      >
+                        {peer.peername || peer.id.slice(0, 12)}
+                      </Link>
                     </TableCell>
-                    <TableCell className="max-w-55 truncate font-mono text-xs">
-                      {peer.id}
+                    <TableCell>
+                      {peer.geo
+                        ? `${flag(peer.geo.countryCode)} ${peer.geo.city || peer.geo.country}`
+                        : "—"}
                     </TableCell>
-                    <TableCell className="max-w-55 truncate font-mono text-xs">
-                      {peer.ipfsId ?? "—"}
+                    <TableCell className="font-mono text-xs">
+                      {peer.publicIp ?? "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      {peer.error ? (
-                        <Badge variant="destructive">down</Badge>
-                      ) : (
+                      {formatBytes(peer.bytesHeld)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {peer.fileCount}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {peer.online ? (
                         <Badge variant="secondary">online</Badge>
+                      ) : (
+                        <Badge variant="destructive">down</Badge>
                       )}
                     </TableCell>
                   </TableRow>

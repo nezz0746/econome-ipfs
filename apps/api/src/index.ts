@@ -2,25 +2,123 @@ import { serve } from "@hono/node-server";
 import {
   apiKeys,
   contributionSnapshots,
+  geoipCache,
   getDb,
   type NewContributionSnapshot,
   participants,
+  pinSizes,
   runMigrations,
   uploads,
 } from "@repo/db";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { runAccountingJob } from "./accounting";
 import { createApp, type RecordedUpload } from "./app";
 import { ClusterClient } from "./cluster-client";
 import { loadConfig } from "./config";
+import { createPeerService } from "./peer-service";
+import { resolveSizes } from "./pin-size";
 
 const config = loadConfig();
 const db = getDb();
 const cluster = new ClusterClient(config.clusterApiUrl);
 
+const GEO_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+const pinSizeStore = {
+  async get(cid: string) {
+    const [row] = await db
+      .select({ size: pinSizes.size })
+      .from(pinSizes)
+      .where(eq(pinSizes.cid, cid))
+      .limit(1);
+    return row?.size ?? null;
+  },
+  async set(cid: string, size: number, source: "upload" | "kubo") {
+    await db
+      .insert(pinSizes)
+      .values({ cid, size, source })
+      .onConflictDoNothing();
+  },
+  async uploadSize(cid: string) {
+    const [row] = await db
+      .select({ size: uploads.size })
+      .from(uploads)
+      .where(eq(uploads.cid, cid))
+      .limit(1);
+    return row?.size ?? null;
+  },
+};
+
+const geoStore = {
+  async get(ip: string) {
+    const [row] = await db
+      .select()
+      .from(geoipCache)
+      .where(eq(geoipCache.ip, ip))
+      .limit(1);
+    if (!row) return null;
+    if (Date.now() - row.fetchedAt.getTime() > GEO_TTL_MS) return null; // expired -> refetch
+    return {
+      ip: row.ip,
+      countryCode: row.countryCode ?? "",
+      country: row.country ?? "",
+      city: row.city ?? "",
+      lat: row.lat ?? 0,
+      lon: row.lon ?? 0,
+    };
+  },
+  async set(geo: {
+    ip: string;
+    countryCode: string;
+    country: string;
+    city: string;
+    lat: number;
+    lon: number;
+  }) {
+    await db
+      .insert(geoipCache)
+      .values({ ...geo, fetchedAt: new Date() })
+      .onConflictDoUpdate({
+        target: geoipCache.ip,
+        set: { ...geo, fetchedAt: new Date() },
+      });
+  },
+};
+
+const peerService = createPeerService({
+  cluster,
+  ipfsApiUrl: config.ipfsApiUrl,
+  geo: geoStore,
+  pinSize: pinSizeStore,
+  async readParticipants() {
+    return db
+      .select({
+        peerId: participants.peerId,
+        label: participants.label,
+        firstSeenAt: participants.firstSeenAt,
+        lastSeenAt: participants.lastSeenAt,
+      })
+      .from(participants);
+  },
+  async readSnapshots(peerId: string) {
+    return db
+      .select({
+        capturedAt: contributionSnapshots.capturedAt,
+        bytesHeld: contributionSnapshots.bytesHeld,
+        cidCount: contributionSnapshots.cidCount,
+        online: contributionSnapshots.online,
+      })
+      .from(contributionSnapshots)
+      .where(eq(contributionSnapshots.peerId, peerId))
+      .orderBy(desc(contributionSnapshots.capturedAt))
+      .limit(200);
+  },
+});
+
 const app = createApp({
   cluster,
+  peerService,
   internalToken: config.internalToken,
   replication: config.replication,
   async findApiKey(hashedKey: string) {
@@ -85,9 +183,18 @@ async function main() {
   if (config.accountingIntervalMs) {
     const interval = config.accountingIntervalMs;
     const tick = () =>
-      runAccountingJob({ cluster, saveSnapshots, now: () => new Date() }).catch(
-        (err) => console.error("[accounting] job failed:", err),
-      );
+      runAccountingJob({
+        cluster,
+        saveSnapshots,
+        now: () => new Date(),
+        resolveSizes: (cids) =>
+          resolveSizes(cids, {
+            getCached: pinSizeStore.get,
+            setCached: pinSizeStore.set,
+            uploadSize: pinSizeStore.uploadSize,
+            ipfsApiUrl: config.ipfsApiUrl,
+          }),
+      }).catch((err) => console.error("[accounting] job failed:", err));
     setInterval(tick, interval);
     console.log(`[accounting] enabled, every ${interval}ms`);
   }

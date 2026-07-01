@@ -8,21 +8,24 @@ import type { ClusterClient, ClusterPeer, PinInfo } from "./cluster-client";
  *
  * - `cidCount`  = number of pins allocated to the peer
  * - `online`    = peer reported no error in /peers
- * - `bytesHeld` = reserved for future pin-size aggregation (0 for now)
+ * - `bytesHeld` = sum of resolved sizes for the peer's pins (0 when unknown)
  */
 export function buildSnapshots(
   peers: ClusterPeer[],
   pins: PinInfo[],
+  sizeByCid: Map<string, number>,
   capturedAt: Date,
 ): NewContributionSnapshot[] {
   return peers.map((peer) => {
-    const cidCount = pins.filter((pin) =>
-      pin.allocations.includes(peer.id),
-    ).length;
+    const held = pins.filter((pin) => pin.allocations.includes(peer.id));
+    const bytesHeld = held.reduce(
+      (sum, pin) => sum + (sizeByCid.get(pin.cid) ?? 0),
+      0,
+    );
     return {
       peerId: peer.id,
-      bytesHeld: 0,
-      cidCount,
+      bytesHeld,
+      cidCount: held.length,
       online: !peer.error,
       capturedAt,
     };
@@ -36,6 +39,8 @@ export interface AccountingDeps {
     snapshots: NewContributionSnapshot[],
     capturedAt: Date,
   ) => Promise<void>;
+  /** Resolve sizes for the given CIDs (populates the pin_sizes cache). */
+  resolveSizes: (cids: string[]) => Promise<Map<string, number>>;
   now: () => Date;
 }
 
@@ -45,8 +50,9 @@ export async function runAccountingJob(deps: AccountingDeps): Promise<number> {
     deps.cluster.peers(),
     deps.cluster.pins(),
   ]);
+  const sizeByCid = await deps.resolveSizes(pins.map((p) => p.cid));
   const capturedAt = deps.now();
-  const snapshots = buildSnapshots(peers, pins, capturedAt);
+  const snapshots = buildSnapshots(peers, pins, sizeByCid, capturedAt);
   await deps.saveSnapshots(snapshots, capturedAt);
   return snapshots.length;
 }

@@ -2,6 +2,7 @@ import { relations } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  doublePrecision,
   index,
   integer,
   pgTable,
@@ -158,6 +159,25 @@ export const contributionSnapshots = pgTable(
   (table) => [index("contribution_snapshots_peer_id_idx").on(table.peerId)],
 );
 
+/** Cache of IP -> geo lookups (ip-api.com). One row per IP, refreshed by TTL. */
+export const geoipCache = pgTable("geoip_cache", {
+  ip: text("ip").primaryKey(),
+  countryCode: text("country_code"),
+  country: text("country"),
+  city: text("city"),
+  lat: doublePrecision("lat"),
+  lon: doublePrecision("lon"),
+  fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
+});
+
+/** Cache of CID -> byte size. A CID's size is immutable, so this never expires. */
+export const pinSizes = pgTable("pin_sizes", {
+  cid: text("cid").primaryKey(),
+  size: bigint("size", { mode: "number" }).notNull(),
+  source: text("source").notNull(), // 'upload' | 'kubo'
+  fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
+});
+
 // ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
@@ -194,3 +214,7 @@ export type Participant = typeof participants.$inferSelect;
 export type OnboardingToken = typeof onboardingTokens.$inferSelect;
 export type ContributionSnapshot = typeof contributionSnapshots.$inferSelect;
 export type NewContributionSnapshot = typeof contributionSnapshots.$inferInsert;
+export type GeoipCacheRow = typeof geoipCache.$inferSelect;
+export type NewGeoipCacheRow = typeof geoipCache.$inferInsert;
+export type PinSizeRow = typeof pinSizes.$inferSelect;
+export type NewPinSizeRow = typeof pinSizes.$inferInsert;

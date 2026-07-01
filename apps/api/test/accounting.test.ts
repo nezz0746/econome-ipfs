@@ -32,19 +32,23 @@ const pins: PinInfo[] = [
 describe("buildSnapshots", () => {
   it("counts pins per peer and flags online status", () => {
     const at = new Date("2026-06-29T00:00:00Z");
-    const snaps = buildSnapshots(peers, pins, at);
+    const sizeByCid = new Map([
+      ["c1", 100],
+      ["c2", 50],
+    ]);
+    const snaps = buildSnapshots(peers, pins, sizeByCid, at);
 
     expect(snaps).toEqual([
       {
         peerId: "peer-a",
-        bytesHeld: 0,
+        bytesHeld: 150,
         cidCount: 2,
         online: true,
         capturedAt: at,
       },
       {
         peerId: "peer-b",
-        bytesHeld: 0,
+        bytesHeld: 100,
         cidCount: 1,
         online: false,
         capturedAt: at,
@@ -65,6 +69,11 @@ describe("runAccountingJob", () => {
     const count = await runAccountingJob({
       cluster,
       saveSnapshots,
+      resolveSizes: async () =>
+        new Map<string, number>([
+          ["c1", 100],
+          ["c2", 50],
+        ]),
       now: () => at,
     });
 
