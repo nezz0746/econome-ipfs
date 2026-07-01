@@ -12,6 +12,12 @@ const fontMono = localFont({
   src: "./fonts/GeistMonoVF.woff",
   variable: "--font-mono",
 });
+// Econome brand display face (weight 700 only) — headings & logo. Body stays Geist.
+const fontHeading = localFont({
+  src: "./fonts/AntiqueOliveNord.woff",
+  weight: "700",
+  variable: "--font-heading",
+});
 
 export const metadata: Metadata = {
   title: "Econome — IPFS Storage Center",
@@ -26,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased`}
+        className={`${fontSans.variable} ${fontMono.variable} ${fontHeading.variable} font-sans antialiased`}
       >
         {children}
         <Toaster />
