@@ -1,5 +1,5 @@
 import { getDb, uploads } from "@repo/db";
-import { count, desc } from "drizzle-orm";
+import { count, desc, sql } from "drizzle-orm";
 import { ExternalLink } from "lucide-react";
 
 import { CopyButton } from "@/components/copy-button";
@@ -40,6 +40,31 @@ function pageHref(page: number, pageSize: number): string {
   return `/dashboard/files?page=${page}&pageSize=${pageSize}`;
 }
 
+/**
+ * One page of uploads plus the unpaginated total, resolved in a single query
+ * via `count(*) OVER ()`. The window count is evaluated over the full filtered
+ * set, so it is only present when the page has at least one row.
+ */
+function selectPage(
+  db: ReturnType<typeof getDb>,
+  offset: number,
+  limit: number,
+) {
+  return db
+    .select({
+      id: uploads.id,
+      cid: uploads.cid,
+      name: uploads.name,
+      size: uploads.size,
+      createdAt: uploads.createdAt,
+      total: sql<number>`count(*) over()`.mapWith(Number),
+    })
+    .from(uploads)
+    .orderBy(desc(uploads.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
 export default async function FilesPage({
   searchParams,
 }: {
@@ -55,26 +80,34 @@ export default async function FilesPage({
     : DEFAULT_PAGE_SIZE;
 
   const db = getDb();
-  const [totalRow] = await db.select({ total: count() }).from(uploads);
-  const total = totalRow?.total ?? 0;
+  const requestedPage = toInt(params.page, 1);
+
+  // Common path: fetch the requested page and its total in one round-trip.
+  let files = await selectPage(db, (requestedPage - 1) * pageSize, pageSize);
+  let total: number;
+  let page: number;
+
+  const firstFile = files[0];
+  if (firstFile) {
+    // The window count rides along on every row, so any row carries the total.
+    total = firstFile.total;
+    page = requestedPage;
+  } else {
+    // Empty page — either the table is empty or the requested page is past the
+    // end. Resolve the true total, clamp to the last page, and fetch it. This
+    // preserves the "out-of-range page shows the last page" behaviour.
+    const [totalRow] = await db.select({ total: count() }).from(uploads);
+    total = totalRow?.total ?? 0;
+    const lastPage = Math.max(1, Math.ceil(total / pageSize));
+    page = Math.min(requestedPage, lastPage);
+    files =
+      total === 0
+        ? files
+        : await selectPage(db, (page - 1) * pageSize, pageSize);
+  }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const page = Math.min(toInt(params.page, 1), totalPages);
   const offset = (page - 1) * pageSize;
-
-  const files = await db
-    .select({
-      id: uploads.id,
-      cid: uploads.cid,
-      name: uploads.name,
-      size: uploads.size,
-      createdAt: uploads.createdAt,
-    })
-    .from(uploads)
-    .orderBy(desc(uploads.createdAt))
-    .limit(pageSize)
-    .offset(offset);
-
   const firstRow = total === 0 ? 0 : offset + 1;
   const lastRow = offset + files.length;
 
