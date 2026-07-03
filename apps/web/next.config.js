@@ -18,6 +18,10 @@ const nextConfig = {
     // 1 MB body cap. Headroom above the 10 MB per-file limit (lib/upload-config)
     // covers multipart boundaries and the api-key form field.
     serverActions: { bodySizeLimit: "12mb" },
+    // Rewrite barrel imports from Base UI to their direct module paths so only
+    // the components actually used are bundled. lucide-react is optimized by
+    // Next.js out of the box; Base UI is not.
+    optimizePackageImports: ["@base-ui/react"],
   },
 };
 

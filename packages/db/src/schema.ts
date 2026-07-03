@@ -111,16 +111,21 @@ export const apiKeys = pgTable(
 );
 
 /** One row per successful ingest, used for auditing and accounting. */
-export const uploads = pgTable("uploads", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  cid: text("cid").notNull(),
-  name: text("name"),
-  size: bigint("size", { mode: "number" }).notNull().default(0),
-  apiKeyId: uuid("api_key_id").references(() => apiKeys.id, {
-    onDelete: "set null",
-  }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const uploads = pgTable(
+  "uploads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    cid: text("cid").notNull(),
+    name: text("name"),
+    size: bigint("size", { mode: "number" }).notNull().default(0),
+    apiKeyId: uuid("api_key_id").references(() => apiKeys.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  // The files list pages by `ORDER BY created_at DESC`; index the sort column.
+  (table) => [index("uploads_created_at_idx").on(table.createdAt.desc())],
+);
 
 /** A vetted participant running a follower (Kubo + ipfs-cluster-follow). */
 export const participants = pgTable("participants", {
@@ -156,7 +161,15 @@ export const contributionSnapshots = pgTable(
     online: boolean("online").notNull().default(false),
     capturedAt: timestamp("captured_at").defaultNow().notNull(),
   },
-  (table) => [index("contribution_snapshots_peer_id_idx").on(table.peerId)],
+  // Peer history reads filter by peer and sort by time
+  // (`WHERE peer_id = ? ORDER BY captured_at DESC`). A composite index serves
+  // the whole query and subsumes a standalone `peer_id` index.
+  (table) => [
+    index("contribution_snapshots_peer_id_captured_at_idx").on(
+      table.peerId,
+      table.capturedAt.desc(),
+    ),
+  ],
 );
 
 /** Cache of IP -> geo lookups (ip-api.com). One row per IP, refreshed by TTL. */
