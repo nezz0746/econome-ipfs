@@ -10,6 +10,22 @@ export function parsePeerId(stdout: string): string | null {
   }
 }
 
+/**
+ * Count tracked pins from `ipfs-cluster-ctl --enc=json status` stdout, which
+ * returns one object per CID. Prefer this over line-counting the plain-text
+ * output: that form prints a CID header plus one line per peer, so counting
+ * lines over-reports by roughly the peer count. Returns 0 on unparseable or
+ * non-array output (e.g. the container still starting).
+ */
+export function parsePinCount(stdout: string): number {
+  try {
+    const parsed = JSON.parse(stdout);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
