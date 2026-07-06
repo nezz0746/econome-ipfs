@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
+import { RefreshLocationsButton } from "@/components/refresh-locations-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -10,8 +11,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getEnrichedPeers } from "@/lib/api";
-import { formatBytes } from "@/lib/format";
+import { type EnrichedPeersResult, getEnrichedPeers } from "@/lib/api";
+import { formatBytes, timeAgo } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +26,13 @@ function flag(countryCode: string): string {
 }
 
 export default async function PeersPage() {
-  let peers: Awaited<ReturnType<typeof getEnrichedPeers>> = [];
+  let peers: EnrichedPeersResult["peers"] = [];
+  let locationsUpdatedAt: string | null = null;
   let error: string | null = null;
   try {
-    peers = await getEnrichedPeers();
+    const result = await getEnrichedPeers();
+    peers = result.peers;
+    locationsUpdatedAt = result.locationsUpdatedAt;
   } catch (err) {
     error = err instanceof Error ? err.message : "Cluster unreachable";
   }
@@ -41,6 +45,14 @@ export default async function PeersPage() {
       />
       <Card>
         <CardContent>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              {locationsUpdatedAt
+                ? `Locations updated ${timeAgo(new Date(locationsUpdatedAt))}`
+                : "Locations not yet resolved"}
+            </p>
+            <RefreshLocationsButton />
+          </div>
           {error ? (
             <p className="font-mono text-sm text-destructive">{error}</p>
           ) : peers.length === 0 ? (

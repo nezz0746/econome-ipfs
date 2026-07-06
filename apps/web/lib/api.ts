@@ -119,8 +119,19 @@ export interface PeerDetail extends EnrichedPeer {
   snapshots: PeerSnapshot[];
 }
 
-export function getEnrichedPeers(): Promise<EnrichedPeer[]> {
-  return gatewayFetch<EnrichedPeer[]>("/peers/enriched");
+export interface EnrichedPeersResult {
+  peers: EnrichedPeer[];
+  /** ISO timestamp of the newest geo lookup across the shown peers, or null. */
+  locationsUpdatedAt: string | null;
+}
+
+/** `refresh: true` forces a fresh geo lookup server-side, bypassing the cache. */
+export function getEnrichedPeers(
+  opts: { refresh?: boolean } = {},
+): Promise<EnrichedPeersResult> {
+  return gatewayFetch<EnrichedPeersResult>(
+    opts.refresh ? "/peers/enriched?refresh=1" : "/peers/enriched",
+  );
 }
 
 export async function getPeerDetail(

@@ -10,7 +10,7 @@ import {
   runMigrations,
   uploads,
 } from "@repo/db";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, max } from "drizzle-orm";
 
 import { runAccountingJob } from "./accounting";
 import { createApp, type RecordedUpload } from "./app";
@@ -83,6 +83,15 @@ const geoStore = {
         target: geoipCache.ip,
         set: { ...geo, fetchedAt: new Date() },
       });
+  },
+  /** Newest geo-resolution time across the given IPs, for the "updated at" line. */
+  async latestFetchedAt(ips: string[]) {
+    if (ips.length === 0) return null;
+    const [row] = await db
+      .select({ latest: max(geoipCache.fetchedAt) })
+      .from(geoipCache)
+      .where(inArray(geoipCache.ip, ips));
+    return row?.latest ?? null;
   },
 };
 
