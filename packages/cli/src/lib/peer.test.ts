@@ -34,36 +34,68 @@ describe("pollPeerId", () => {
   });
 });
 
+// One GlobalPinInfo object, pretty-printed the way `ipfs-cluster-ctl
+// --enc=json status` prints it (4-space indent, nested peer_map, arrays).
+function pinObject(cid: string): string {
+  return JSON.stringify(
+    {
+      cid,
+      name: "",
+      allocations: [],
+      origins: [],
+      created: "2026-07-01T22:40:14Z",
+      metadata: null,
+      peer_map: {
+        "12D3KooWAJjy1pMXMy9Mohxs1UdnAR2sPgBCFXfR1FwrMpa19DvF": {
+          peername: "fb36339d83e8",
+          ipfs_peer_id: "12D3KooWPF8HFEfPGwy2kaHkCL9Ek5eiXWaFNJRiVVb6CSqwaEZm",
+          ipfs_peer_addresses: ["/dns4/example.libp2p.direct/tcp/4001/tls/ws"],
+          status: "pinned",
+          timestamp: "2026-07-01T22:40:14Z",
+          error: "",
+        },
+      },
+    },
+    null,
+    4,
+  );
+}
+
 describe("parsePinCount", () => {
-  it("counts one entry per CID from `--enc=json status` output", () => {
-    // The JSON form returns one GlobalPinInfo object per CID, regardless of how
-    // many peers report on each CID.
-    const json = JSON.stringify([
-      { cid: "bafy1", peer_map: { peerA: {}, peerB: {} } },
-      { cid: "bafy2", peer_map: { peerA: {}, peerB: {} } },
-      { cid: "bafy3", peer_map: { peerA: {}, peerB: {} } },
-    ]);
-    expect(parsePinCount(json)).toBe(3);
+  it("counts concatenated pretty-printed objects (real cluster-ctl format)", () => {
+    // cluster-ctl does NOT emit a JSON array — it prints one pretty-printed
+    // object per CID, back to back. This is the shape that regressed the count
+    // to 0 (JSON.parse of the whole blob throws on the second object).
+    const stream = [pinObject("Qm1"), pinObject("Qm2"), pinObject("Qm3")].join(
+      "\n",
+    );
+    expect(parsePinCount(stream)).toBe(3);
   });
 
-  it("does not over-count the way line-counting the text output did", () => {
-    // Regression guard: plain-text `ipfs-cluster-ctl status` prints a CID
-    // header line plus one line per peer, so counting lines reported ~3x the
-    // real pin count (37 CIDs * 3 lines = 111). The JSON count stays honest.
-    const entries = Array.from({ length: 37 }, (_, i) => ({
-      cid: `bafy${i}`,
-      peer_map: { peerA: {}, peerB: {} },
-    }));
-    expect(parsePinCount(JSON.stringify(entries))).toBe(37);
+  it("counts newline-delimited objects", () => {
+    expect(parsePinCount('{"cid":"Qm1"}\n{"cid":"Qm2"}')).toBe(2);
+  });
+
+  it("counts a single object as one pin", () => {
+    expect(parsePinCount(pinObject("Qm1"))).toBe(1);
+  });
+
+  it("counts a JSON array (defensive: other cluster-ctl versions)", () => {
+    expect(parsePinCount('[{"cid":"Qm1"},{"cid":"Qm2"}]')).toBe(2);
+  });
+
+  it("ignores braces and quotes inside string values", () => {
+    const weird = JSON.stringify({ cid: "Qm1", name: 'a{b}c "x" \\ end' });
+    expect(parsePinCount(`${weird}\n${weird}`)).toBe(2);
   });
 
   it("returns 0 for an empty pinset", () => {
     expect(parsePinCount("[]")).toBe(0);
+    expect(parsePinCount("")).toBe(0);
+    expect(parsePinCount("   \n  ")).toBe(0);
   });
 
-  it("returns 0 for non-array or unparseable output", () => {
-    expect(parsePinCount("")).toBe(0);
+  it("returns 0 for unparseable non-object output", () => {
     expect(parsePinCount("connection refused")).toBe(0);
-    expect(parsePinCount('{"id":"not-a-list"}')).toBe(0);
   });
 });
