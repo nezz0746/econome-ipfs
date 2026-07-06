@@ -1,4 +1,4 @@
-import type { ClusterClient } from "./cluster-client";
+import type { ClusterClient, ClusterPeer } from "./cluster-client";
 import type { Geo } from "./geoip";
 import { resolveGeo } from "./geoip";
 import { extractPublicIp } from "./net";
@@ -13,10 +13,44 @@ import {
 } from "./peer-view";
 import { resolveSizes, type SizeDeps } from "./pin-size";
 
+/** Cap on concurrent geo lookups so a large cluster can't burst ip-api's 45/min. */
+const GEO_LOOKUP_CONCURRENCY = 8;
+
+async function forEachLimit<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  for (let i = 0; i < items.length; i += limit) {
+    await Promise.all(items.slice(i, i + limit).map(fn));
+  }
+}
+
+/** Distinct, non-relay public IPs across the given peers. */
+function publicIpsOf(peers: ClusterPeer[]): string[] {
+  return [
+    ...new Set(
+      peers
+        .map((p) => extractPublicIp(p.addresses))
+        .filter((ip): ip is string => !!ip),
+    ),
+  ];
+}
+
+export interface EnrichedPeersResult {
+  peers: EnrichedPeer[];
+  /** Newest geo-resolution time across the shown peers (null if none resolved). */
+  locationsUpdatedAt: Date | null;
+}
+
 export interface PeerServiceDeps {
   cluster: ClusterClient;
   ipfsApiUrl: string;
-  geo: { get(ip: string): Promise<Geo | null>; set(geo: Geo): Promise<void> };
+  geo: {
+    get(ip: string): Promise<Geo | null>;
+    set(geo: Geo): Promise<void>;
+    latestFetchedAt(ips: string[]): Promise<Date | null>;
+  };
   pinSize: {
     get(cid: string): Promise<number | null>;
     set(cid: string, size: number, source: "upload" | "kubo"): Promise<void>;
@@ -28,7 +62,7 @@ export interface PeerServiceDeps {
 }
 
 export interface PeerService {
-  enrichedPeers(): Promise<EnrichedPeer[]>;
+  enrichedPeers(opts?: { force?: boolean }): Promise<EnrichedPeersResult>;
   peerDetail(peerId: string): Promise<PeerDetail | null>;
 }
 
@@ -41,7 +75,9 @@ export function createPeerService(deps: PeerServiceDeps): PeerService {
     fetchImpl: deps.fetchImpl,
   };
 
-  async function gather(): Promise<PeerViewInput> {
+  async function gather(
+    opts: { force?: boolean } = {},
+  ): Promise<PeerViewInput> {
     const [peers, pins, statuses, participants] = await Promise.all([
       deps.cluster.peers(),
       deps.cluster.pins(),
@@ -53,32 +89,36 @@ export function createPeerService(deps: PeerServiceDeps): PeerService {
       sizeDeps,
     );
 
-    // Resolve geo for each distinct public IP (best-effort).
-    const ips = [
-      ...new Set(
-        peers
-          .map((p) => extractPublicIp(p.addresses))
-          .filter((ip): ip is string => !!ip),
-      ),
-    ];
+    // Resolve geo for each distinct public IP (best-effort, concurrency-capped).
+    // `force` bypasses the geo cache to re-query the provider on demand.
     const geoByIp = new Map<string, Geo>();
-    await Promise.all(
-      ips.map(async (ip) => {
-        const geo = await resolveGeo(ip, {
-          getCached: deps.geo.get,
-          setCached: deps.geo.set,
-          fetchImpl: deps.fetchImpl,
-        });
+    await forEachLimit(
+      publicIpsOf(peers),
+      GEO_LOOKUP_CONCURRENCY,
+      async (ip) => {
+        const geo = await resolveGeo(
+          ip,
+          {
+            getCached: deps.geo.get,
+            setCached: deps.geo.set,
+            fetchImpl: deps.fetchImpl,
+          },
+          { force: opts.force },
+        );
         if (geo) geoByIp.set(ip, geo);
-      }),
+      },
     );
 
     return { peers, pins, statuses, sizeByCid, geoByIp, participants };
   }
 
   return {
-    async enrichedPeers() {
-      return buildEnrichedPeers(await gather());
+    async enrichedPeers(opts: { force?: boolean } = {}) {
+      const input = await gather(opts);
+      const locationsUpdatedAt = await deps.geo.latestFetchedAt(
+        publicIpsOf(input.peers),
+      );
+      return { peers: buildEnrichedPeers(input), locationsUpdatedAt };
     },
     async peerDetail(peerId: string) {
       const input = await gather();

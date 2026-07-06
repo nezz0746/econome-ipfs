@@ -11,7 +11,7 @@ import {
 } from "@repo/db";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { ingest } from "@/lib/api";
+import { getEnrichedPeers, ingest } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/upload-config";
 
@@ -51,6 +51,16 @@ export async function revokeApiKey(formData: FormData): Promise<void> {
     .set({ revokedAt: new Date() })
     .where(eq(apiKeys.id, id));
   revalidatePath("/dashboard/api-keys");
+}
+
+/**
+ * Force a fresh geo lookup for every peer's public IP, bypassing the 30-day
+ * geo cache, then revalidate the Peers page so the new locations render.
+ */
+export async function refreshPeerLocations(): Promise<void> {
+  await requireUserId();
+  await getEnrichedPeers({ refresh: true });
+  revalidatePath("/dashboard/peers");
 }
 
 /** Mint a single-use onboarding token for a new participant. */

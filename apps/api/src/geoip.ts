@@ -16,13 +16,20 @@ export interface GeoDeps {
 /**
  * Resolve an IP to a geo location. Cache-first; on a miss, queries ip-api.com
  * (free, no key) and caches the result. Best-effort: any failure returns null.
+ *
+ * Pass `{ force: true }` to skip the cache read and re-query the provider (used
+ * by the dashboard's manual "Refresh locations" action). The fresh result is
+ * still written back to the cache.
  */
 export async function resolveGeo(
   ip: string,
   deps: GeoDeps,
+  opts: { force?: boolean } = {},
 ): Promise<Geo | null> {
-  const cached = await deps.getCached(ip);
-  if (cached) return cached;
+  if (!opts.force) {
+    const cached = await deps.getCached(ip);
+    if (cached) return cached;
+  }
 
   const fetchImpl = deps.fetchImpl ?? fetch;
   try {

@@ -42,7 +42,7 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     recordUpload: vi.fn(async () => {}),
     forgetUpload: vi.fn(async () => {}),
     peerService: {
-      enrichedPeers: async () => [],
+      enrichedPeers: async () => ({ peers: [], locationsUpdatedAt: null }),
       peerDetail: async () => null,
     },
     ...overrides,

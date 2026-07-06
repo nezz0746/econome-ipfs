@@ -76,9 +76,11 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
   gateway.use("*", internalAuth(deps.internalToken));
 
   gateway.get("/peers", async (c) => c.json(await deps.cluster.peers()));
-  gateway.get("/peers/enriched", async (c) =>
-    c.json(await deps.peerService.enrichedPeers()),
-  );
+  gateway.get("/peers/enriched", async (c) => {
+    // `?refresh=1` forces a fresh geo lookup, bypassing the 30-day geo cache.
+    const force = c.req.query("refresh") === "1";
+    return c.json(await deps.peerService.enrichedPeers({ force }));
+  });
   gateway.get("/peers/:peerId", async (c) => {
     const detail = await deps.peerService.peerDetail(c.req.param("peerId"));
     return detail ? c.json(detail) : c.json({ error: "peer not found" }, 404);
