@@ -36,6 +36,13 @@ export interface EnrichedPeer {
   fileCount: number;
   firstSeenAt: Date | null;
   lastSeenAt: Date | null;
+  /** When the current online session began (online peers only), else null. */
+  onlineSince: Date | null;
+}
+
+export interface PeerLastSnapshot {
+  bytesHeld: number;
+  cidCount: number;
 }
 
 export interface PeerDetail extends EnrichedPeer {
@@ -51,6 +58,10 @@ export interface PeerViewInput {
   sizeByCid: Map<string, number>;
   geoByIp: Map<string, Geo>;
   participants: ParticipantRow[];
+  /** Last-known holdings per peer, for peers that are currently offline. */
+  lastSnapshotByPeer: Map<string, PeerLastSnapshot>;
+  /** Newest offline snapshot per peer; the online session began just after it. */
+  lastOfflineByPeer: Map<string, Date>;
 }
 
 /**
@@ -71,23 +82,61 @@ function enrichOne(peer: ClusterPeer, input: PeerViewInput): EnrichedPeer {
     0,
   );
   const participant = input.participants.find((p) => p.peerId === peer.id);
+  const online = !peer.error;
   return {
     id: peer.id,
     peername: peer.peername,
     ipfsId: peer.ipfsId,
     version: peer.version,
-    online: !peer.error,
+    online,
     publicIp,
     geo: publicIp ? (input.geoByIp.get(publicIp) ?? null) : null,
     bytesHeld,
     fileCount: held.length,
     firstSeenAt: participant?.firstSeenAt ?? null,
     lastSeenAt: participant?.lastSeenAt ?? null,
+    // Session started just after the last recorded offline snapshot; fall back
+    // to when we first saw the peer if it has never been seen offline.
+    onlineSince: online
+      ? (input.lastOfflineByPeer.get(peer.id) ??
+        participant?.firstSeenAt ??
+        null)
+      : null,
   };
 }
 
+/** A known participant that isn't in the live peer list — render it as offline. */
+function buildOfflinePeer(
+  participant: ParticipantRow,
+  input: PeerViewInput,
+): EnrichedPeer {
+  const last = input.lastSnapshotByPeer.get(participant.peerId);
+  return {
+    id: participant.peerId,
+    peername: participant.label ?? "",
+    online: false,
+    publicIp: null,
+    geo: null,
+    bytesHeld: last?.bytesHeld ?? 0,
+    fileCount: last?.cidCount ?? 0,
+    firstSeenAt: participant.firstSeenAt,
+    lastSeenAt: participant.lastSeenAt,
+    onlineSince: null,
+  };
+}
+
+/**
+ * Live cluster peers, plus known participants that are currently offline (in the
+ * `participants` table but absent from the live peer list), so the dashboard can
+ * show past followers with their last-known holdings and when they dropped off.
+ */
 export function buildEnrichedPeers(input: PeerViewInput): EnrichedPeer[] {
-  return input.peers.map((peer) => enrichOne(peer, input));
+  const live = input.peers.map((peer) => enrichOne(peer, input));
+  const liveIds = new Set(input.peers.map((p) => p.id));
+  const offline = input.participants
+    .filter((p) => !liveIds.has(p.peerId))
+    .map((p) => buildOfflinePeer(p, input));
+  return [...live, ...offline];
 }
 
 export function buildPeerDetail(

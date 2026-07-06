@@ -123,6 +123,36 @@ const peerService = createPeerService({
       .orderBy(desc(contributionSnapshots.capturedAt))
       .limit(200);
   },
+  // Latest snapshot per peer (one row each) via DISTINCT ON, served by the
+  // (peer_id, captured_at DESC) index. Last-known holdings for offline peers.
+  async readLastSnapshots() {
+    return db
+      .selectDistinctOn([contributionSnapshots.peerId], {
+        peerId: contributionSnapshots.peerId,
+        bytesHeld: contributionSnapshots.bytesHeld,
+        cidCount: contributionSnapshots.cidCount,
+      })
+      .from(contributionSnapshots)
+      .orderBy(
+        contributionSnapshots.peerId,
+        desc(contributionSnapshots.capturedAt),
+      );
+  },
+  // Newest offline snapshot per peer. The current online session began just
+  // after this; an aggregate, so it stays a single indexed scan per peer.
+  async readLastOffline() {
+    const rows = await db
+      .select({
+        peerId: contributionSnapshots.peerId,
+        lastOffline: max(contributionSnapshots.capturedAt),
+      })
+      .from(contributionSnapshots)
+      .where(eq(contributionSnapshots.online, false))
+      .groupBy(contributionSnapshots.peerId);
+    return rows.flatMap((r) =>
+      r.lastOffline ? [{ peerId: r.peerId, lastOffline: r.lastOffline }] : [],
+    );
+  },
 });
 
 const app = createApp({

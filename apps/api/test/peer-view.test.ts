@@ -59,6 +59,8 @@ const input: PeerViewInput = {
   ]),
   geoByIp: new Map(),
   participants: [],
+  lastSnapshotByPeer: new Map(),
+  lastOfflineByPeer: new Map(),
 };
 
 describe("buildEnrichedPeers (pin-everywhere cluster)", () => {
@@ -71,6 +73,54 @@ describe("buildEnrichedPeers (pin-everywhere cluster)", () => {
     // peer-b has c1 pinned but c2 still pinning → only one file synced.
     expect(b?.fileCount).toBe(1);
     expect(b?.bytesHeld).toBe(100);
+  });
+});
+
+describe("buildEnrichedPeers online/offline history", () => {
+  it("sets onlineSince to just after the last offline snapshot", () => {
+    const wentOnline = new Date("2026-07-02T10:00:00Z");
+    const byId = new Map(
+      buildEnrichedPeers({
+        ...input,
+        lastOfflineByPeer: new Map([["peer-a", wentOnline]]),
+      }).map((p) => [p.id, p]),
+    );
+    expect(byId.get("peer-a")?.onlineSince).toEqual(wentOnline);
+    // peer-b never went offline in the record → no session start.
+    expect(byId.get("peer-b")?.onlineSince).toBeNull();
+  });
+
+  it("includes offline participants with last-known holdings", () => {
+    const firstSeen = new Date("2026-06-01T00:00:00Z");
+    const lastSeen = new Date("2026-07-03T09:00:00Z");
+    const result = buildEnrichedPeers({
+      ...input,
+      participants: [
+        {
+          peerId: "peer-a",
+          label: "main",
+          firstSeenAt: firstSeen,
+          lastSeenAt: lastSeen,
+        },
+        {
+          peerId: "gone",
+          label: "old-follower",
+          firstSeenAt: firstSeen,
+          lastSeenAt: lastSeen,
+        },
+      ],
+      lastSnapshotByPeer: new Map([["gone", { bytesHeld: 4200, cidCount: 7 }]]),
+    });
+    // The two live peers stay, plus the offline "gone" participant is appended.
+    expect(result).toHaveLength(3);
+    const gone = result.find((p) => p.id === "gone");
+    expect(gone?.online).toBe(false);
+    expect(gone?.peername).toBe("old-follower");
+    expect(gone?.bytesHeld).toBe(4200);
+    expect(gone?.fileCount).toBe(7);
+    expect(gone?.lastSeenAt).toEqual(lastSeen);
+    // A participant that IS live (peer-a) must not be duplicated.
+    expect(result.filter((p) => p.id === "peer-a")).toHaveLength(1);
   });
 });
 

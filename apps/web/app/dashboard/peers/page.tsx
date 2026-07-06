@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
+import { PeerStatus } from "@/components/peer-status";
 import { RefreshLocationsButton } from "@/components/refresh-locations-button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -73,7 +73,10 @@ export default async function PeersPage() {
               </TableHeader>
               <TableBody>
                 {peers.map((peer) => (
-                  <TableRow key={peer.id}>
+                  <TableRow
+                    key={peer.id}
+                    className={peer.online ? undefined : "opacity-60"}
+                  >
                     <TableCell className="font-medium">
                       <Link
                         href={`/dashboard/peers/${encodeURIComponent(peer.id)}`}
@@ -97,11 +100,11 @@ export default async function PeersPage() {
                       {peer.fileCount}
                     </TableCell>
                     <TableCell className="text-right">
-                      {peer.online ? (
-                        <Badge variant="secondary">online</Badge>
-                      ) : (
-                        <Badge variant="destructive">down</Badge>
-                      )}
+                      <PeerStatus
+                        online={peer.online}
+                        onlineSince={peer.onlineSince}
+                        lastSeenAt={peer.lastSeenAt}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
