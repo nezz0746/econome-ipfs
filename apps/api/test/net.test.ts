@@ -27,4 +27,25 @@ describe("extractPublicIp", () => {
   it("returns null for empty input", () => {
     expect(extractPublicIp([])).toBe(null);
   });
+
+  it("ignores circuit-relay addresses (the ip belongs to the relay)", () => {
+    // A NAT'd peer reachable only through a relay advertises the relay's public
+    // ip inside a /p2p-circuit/ address. That ip is the relay's, not the peer's,
+    // so it must not be treated as the peer's location.
+    expect(
+      extractPublicIp([
+        "/ip4/127.0.0.1/tcp/9096",
+        "/ip4/51.83.32.120/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer",
+      ]),
+    ).toBe(null);
+  });
+
+  it("prefers a direct public ip over a relay address", () => {
+    expect(
+      extractPublicIp([
+        "/ip4/51.83.32.120/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer",
+        "/ip4/90.15.22.7/tcp/4001",
+      ]),
+    ).toBe("90.15.22.7");
+  });
 });

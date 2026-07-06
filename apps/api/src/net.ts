@@ -4,6 +4,10 @@ export function extractPublicIp(addresses: string[]): string | null {
   const ip6: string[] = [];
   for (const addr of addresses) {
     const parts = addr.split("/");
+    // Circuit-relay addresses (…/p2p-circuit/…) embed the RELAY's ip, not the
+    // peer's. A NAT'd peer reachable only via a relay would otherwise be
+    // geolocated to the relay — e.g. every follower "moving" to the main peer.
+    if (parts.includes("p2p-circuit")) continue;
     const i4 = parts.indexOf("ip4");
     const v4 = i4 >= 0 ? parts[i4 + 1] : undefined;
     if (v4) ip4.push(v4);
