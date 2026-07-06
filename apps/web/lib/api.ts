@@ -96,6 +96,8 @@ export interface EnrichedPeer {
   fileCount: number;
   firstSeenAt: string | null;
   lastSeenAt: string | null;
+  /** ISO timestamp of when the current online session began (online peers). */
+  onlineSince: string | null;
 }
 
 export interface PeerFile {

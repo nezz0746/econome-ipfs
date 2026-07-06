@@ -58,6 +58,12 @@ export interface PeerServiceDeps {
   };
   readParticipants(): Promise<ParticipantRow[]>;
   readSnapshots(peerId: string): Promise<SnapshotRow[]>;
+  /** Latest snapshot per peer — last-known holdings for offline peers. */
+  readLastSnapshots(): Promise<
+    { peerId: string; bytesHeld: number; cidCount: number }[]
+  >;
+  /** Newest offline snapshot per peer — start of the current online session. */
+  readLastOffline(): Promise<{ peerId: string; lastOffline: Date }[]>;
   fetchImpl?: typeof fetch;
 }
 
@@ -78,15 +84,27 @@ export function createPeerService(deps: PeerServiceDeps): PeerService {
   async function gather(
     opts: { force?: boolean } = {},
   ): Promise<PeerViewInput> {
-    const [peers, pins, statuses, participants] = await Promise.all([
-      deps.cluster.peers(),
-      deps.cluster.pins(),
-      deps.cluster.pinStatuses(),
-      deps.readParticipants(),
-    ]);
+    const [peers, pins, statuses, participants, lastSnaps, lastOfflines] =
+      await Promise.all([
+        deps.cluster.peers(),
+        deps.cluster.pins(),
+        deps.cluster.pinStatuses(),
+        deps.readParticipants(),
+        deps.readLastSnapshots(),
+        deps.readLastOffline(),
+      ]);
     const sizeByCid = await resolveSizes(
       pins.map((p) => p.cid),
       sizeDeps,
+    );
+    const lastSnapshotByPeer = new Map(
+      lastSnaps.map((s) => [
+        s.peerId,
+        { bytesHeld: s.bytesHeld, cidCount: s.cidCount },
+      ]),
+    );
+    const lastOfflineByPeer = new Map(
+      lastOfflines.map((o) => [o.peerId, o.lastOffline]),
     );
 
     // Resolve geo for each distinct public IP (best-effort, concurrency-capped).
@@ -109,7 +127,16 @@ export function createPeerService(deps: PeerServiceDeps): PeerService {
       },
     );
 
-    return { peers, pins, statuses, sizeByCid, geoByIp, participants };
+    return {
+      peers,
+      pins,
+      statuses,
+      sizeByCid,
+      geoByIp,
+      participants,
+      lastSnapshotByPeer,
+      lastOfflineByPeer,
+    };
   }
 
   return {

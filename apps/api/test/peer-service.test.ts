@@ -57,6 +57,8 @@ function makeDeps(overrides: Partial<PeerServiceDeps> = {}): {
     },
     readParticipants: async () => [],
     readSnapshots: async () => [],
+    readLastSnapshots: async () => [],
+    readLastOffline: async () => [],
     fetchImpl: fetchImpl as unknown as typeof fetch,
     ...overrides,
   };
