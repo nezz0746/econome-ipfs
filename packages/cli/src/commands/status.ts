@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import { composeExec } from "../lib/docker.js";
-import { parsePeerId } from "../lib/peer.js";
+import { parsePeerId, parsePinCount } from "../lib/peer.js";
 import { projectDir, readProjectConfig } from "../lib/project.js";
 
 export async function status(): Promise<void> {
@@ -25,10 +25,10 @@ export async function status(): Promise<void> {
 
     const pins = await composeExec(dir, "cluster", [
       "ipfs-cluster-ctl",
+      "--enc=json",
       "status",
     ]);
-    const pinCount = pins.split("\n").filter((l) => l.trim().length > 0).length;
-    p.log.info(`Tracked pins: ${pinCount}`);
+    p.log.info(`Tracked pins: ${parsePinCount(pins)}`);
   } catch (err) {
     p.log.error(
       `Follower not reachable: ${err instanceof Error ? err.message : String(err)}`,
