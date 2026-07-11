@@ -1,11 +1,21 @@
-import { AlertTriangle, Database, Network, Wifi } from "lucide-react";
+import {
+  AlertTriangle,
+  Database,
+  ExternalLink,
+  Network,
+  Wifi,
+} from "lucide-react";
 
 import { AutoRefresh } from "@/components/auto-refresh";
+import { CopyButton } from "@/components/copy-button";
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getOverview, getPinProgress, type PinProgress } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
+
+const GATEWAY_URL = process.env.IPFS_GATEWAY_URL ?? "http://localhost:8081";
 
 export default async function OverviewPage() {
   let overview: Awaited<ReturnType<typeof getOverview>> | null = null;
@@ -36,6 +46,34 @@ export default async function OverviewPage() {
         title="Overview"
         description="Live state of the Econome collaborative cluster."
       />
+
+      {/* Public IPFS gateway for this node — copy or open. */}
+      <Card className="mb-4">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium">IPFS Gateway</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate font-mono text-sm">
+              {GATEWAY_URL}
+            </code>
+            <CopyButton value={GATEWAY_URL} label="Gateway URL copied" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              aria-label="Open gateway"
+              render={<a href={GATEWAY_URL} target="_blank" rel="noreferrer" />}
+            >
+              <ExternalLink className="size-3.5" />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Serve any pinned CID at{" "}
+            <code className="font-mono">{GATEWAY_URL}/ipfs/&lt;cid&gt;</code>
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Keep progress live while a migration/pin is in flight. */}
       {inFlight > 0 ? <AutoRefresh seconds={8} /> : null}
