@@ -160,6 +160,7 @@ const app = createApp({
   peerService,
   internalToken: config.internalToken,
   replication: config.replication,
+  ipfsApiUrl: config.ipfsApiUrl,
   async findApiKey(hashedKey: string) {
     const [row] = await db
       .select({ id: apiKeys.id })

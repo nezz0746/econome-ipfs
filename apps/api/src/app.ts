@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 
 import { type ApiKeyRecord, apiKeyAuth, internalAuth } from "./auth";
+import { importCidFromGateway } from "./car-import";
 import type { ClusterClient } from "./cluster-client";
 import type { PeerService } from "./peer-service";
 
@@ -23,6 +24,8 @@ export interface AppDeps {
   /** Remove ingest records for a CID (called when it is unpinned). */
   forgetUpload: (cid: string) => Promise<void>;
   replication: { min: number; max: number };
+  /** kubo HTTP API base (e.g. http://kubo:5001), for CID-preserving CAR import. */
+  ipfsApiUrl: string;
   /** Enriched peer views (files, geo, bytes, history) for the dashboard. */
   peerService: PeerService;
 }
@@ -33,6 +36,11 @@ type Variables = { apiKeyId: string };
 const PIN_BATCH_MAX = 1000;
 /** In-flight pin requests to the cluster per batch. */
 const PIN_CONCURRENCY = 8;
+
+/** Default HTTP gateway for CID-preserving migration (CAR-capable). */
+const DEFAULT_IMPORT_GATEWAY = "https://gateway.pinata.cloud";
+/** In-flight CAR fetch+import operations per batch (each moves real bytes). */
+const IMPORT_CONCURRENCY = 5;
 
 /** Run `fn` over `items` with at most `limit` in flight; preserves order. */
 async function mapPool<T, R>(
@@ -137,6 +145,72 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
 
     const failed = results.filter((r) => !r.ok).length;
     return c.json({ pinned: results.length - failed, failed, results });
+  });
+
+  // CID-preserving migration off an HTTP-only pinning service (e.g. Pinata):
+  // fetch each CID's DAG as a CAR from a gateway, import the raw blocks into
+  // kubo (preserving the CID), then track+replicate it in the cluster. Verifies
+  // the imported root equals the requested CID.
+  app.post("/ingest/import", apiKeyAuth(deps.findApiKey), async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid JSON body" }, 400);
+    }
+
+    const cids = (body as { cids?: unknown }).cids;
+    const rawGateway = (body as { gateway?: unknown }).gateway;
+    const gateway =
+      typeof rawGateway === "string" && rawGateway.length > 0
+        ? rawGateway
+        : DEFAULT_IMPORT_GATEWAY;
+
+    if (
+      !Array.isArray(cids) ||
+      cids.length === 0 ||
+      cids.length > PIN_BATCH_MAX ||
+      !cids.every((cid) => typeof cid === "string" && cid.length > 0)
+    ) {
+      return c.json(
+        {
+          error: `expected 'cids' to be a non-empty array of up to ${PIN_BATCH_MAX} CID strings`,
+        },
+        400,
+      );
+    }
+
+    const results = await mapPool(
+      cids as string[],
+      IMPORT_CONCURRENCY,
+      async (cid) => {
+        const r = await importCidFromGateway(cid, {
+          gateway,
+          ipfsApiUrl: deps.ipfsApiUrl,
+        });
+        if (!r.ok) return r;
+        // Content is now local in kubo; tracking it in the cluster completes
+        // instantly and replicates it to followers.
+        try {
+          await deps.cluster.pinByCid(cid, {
+            replicationMin: deps.replication.min,
+            replicationMax: deps.replication.max,
+          });
+        } catch (e) {
+          return {
+            ...r,
+            ok: false,
+            error: `imported_but_cluster_pin_failed: ${
+              e instanceof Error ? e.message : "unknown"
+            }`,
+          };
+        }
+        return r;
+      },
+    );
+
+    const imported = results.filter((r) => r.ok).length;
+    return c.json({ imported, failed: results.length - imported, results });
   });
 
   // Unpin + forget a CID (used by external integrations on asset deletion).

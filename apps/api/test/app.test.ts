@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const importMock = vi.hoisted(() => vi.fn());
+vi.mock("../src/car-import", () => ({ importCidFromGateway: importMock }));
 
 import { type AppDeps, createApp } from "../src/app";
 import { hashApiKey } from "../src/auth";
@@ -38,6 +41,7 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     cluster: fakeCluster(),
     internalToken: "tok",
     replication: { min: 2, max: 3 },
+    ipfsApiUrl: "http://kubo:5001",
     findApiKey: async (hashed) =>
       hashed === hashApiKey("k") ? { id: "key-1" } : undefined,
     recordUpload: vi.fn(async () => {}),
@@ -188,6 +192,113 @@ describe("POST /ingest/pin", () => {
     });
     expect(res.status).toBe(400);
     expect(cluster.pinByCid).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /ingest/import", () => {
+  beforeEach(() => {
+    importMock.mockReset();
+    importMock.mockImplementation(async (cid: string) => ({
+      cid,
+      ok: true,
+      blocks: 1,
+      bytes: 10,
+    }));
+  });
+
+  it("rejects without an api key and does no work", async () => {
+    const cluster = fakeCluster();
+    const res = await createApp(makeDeps({ cluster })).request(
+      "/ingest/import",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cids: ["bafy1"] }),
+      },
+    );
+    expect(res.status).toBe(401);
+    expect(importMock).not.toHaveBeenCalled();
+    expect(cluster.pinByCid).not.toHaveBeenCalled();
+  });
+
+  it("imports each cid (default gateway) and tracks it in the cluster", async () => {
+    const cluster = fakeCluster();
+    const res = await createApp(makeDeps({ cluster })).request(
+      "/ingest/import",
+      {
+        method: "POST",
+        headers: { "x-api-key": "k", "content-type": "application/json" },
+        body: JSON.stringify({ cids: ["bafy1", "bafy2"] }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { imported: number; failed: number };
+    expect(body).toMatchObject({ imported: 2, failed: 0 });
+    expect(importMock).toHaveBeenCalledWith("bafy1", {
+      gateway: "https://gateway.pinata.cloud",
+      ipfsApiUrl: "http://kubo:5001",
+    });
+    expect(cluster.pinByCid).toHaveBeenCalledWith("bafy1", {
+      replicationMin: 2,
+      replicationMax: 3,
+    });
+  });
+
+  it("passes a custom gateway through to the importer", async () => {
+    await createApp(makeDeps()).request("/ingest/import", {
+      method: "POST",
+      headers: { "x-api-key": "k", "content-type": "application/json" },
+      body: JSON.stringify({ cids: ["bafy1"], gateway: "https://my.gw" }),
+    });
+    expect(importMock).toHaveBeenCalledWith("bafy1", {
+      gateway: "https://my.gw",
+      ipfsApiUrl: "http://kubo:5001",
+    });
+  });
+
+  it("reports a failed import and does not pin it", async () => {
+    importMock.mockImplementation(async (cid: string) =>
+      cid === "bad"
+        ? { cid, ok: false, error: "cid_mismatch (imported none)" }
+        : { cid, ok: true },
+    );
+    const cluster = fakeCluster();
+    const res = await createApp(makeDeps({ cluster })).request(
+      "/ingest/import",
+      {
+        method: "POST",
+        headers: { "x-api-key": "k", "content-type": "application/json" },
+        body: JSON.stringify({ cids: ["bafy1", "bad"] }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      imported: number;
+      failed: number;
+      results: { cid: string; ok: boolean; error?: string }[];
+    };
+    expect(body.imported).toBe(1);
+    expect(body.failed).toBe(1);
+    expect(body.results).toContainEqual({
+      cid: "bad",
+      ok: false,
+      error: "cid_mismatch (imported none)",
+    });
+    expect(cluster.pinByCid).toHaveBeenCalledWith("bafy1", {
+      replicationMin: 2,
+      replicationMax: 3,
+    });
+    expect(cluster.pinByCid).not.toHaveBeenCalledWith("bad", expect.anything());
+  });
+
+  it("rejects an empty cids array", async () => {
+    const res = await createApp(makeDeps()).request("/ingest/import", {
+      method: "POST",
+      headers: { "x-api-key": "k", "content-type": "application/json" },
+      body: JSON.stringify({ cids: [] }),
+    });
+    expect(res.status).toBe(400);
+    expect(importMock).not.toHaveBeenCalled();
   });
 });
 
