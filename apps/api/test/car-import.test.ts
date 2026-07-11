@@ -80,4 +80,40 @@ describe("importCidFromGateway", () => {
     expect(r.ok).toBe(false);
     expect(r.error).toContain("pin_error");
   });
+
+  it("treats a dag/import error as success when the DAG is actually local (recovered)", async () => {
+    const fetchImpl = mockFetch((u) => {
+      if (u.includes("format=car")) return { body: "CARBYTES" };
+      if (u.includes("/api/v0/dag/import"))
+        return { status: 500, body: "boom" };
+      if (u.includes("/api/v0/dag/stat"))
+        return { body: JSON.stringify({ Size: 4242 }) };
+      throw new Error(`unexpected ${u}`);
+    });
+
+    const r = await importCidFromGateway(CID, { ...DEPS, fetchImpl });
+
+    expect(r).toMatchObject({
+      cid: CID,
+      ok: true,
+      recovered: true,
+      bytes: 4242,
+    });
+  });
+
+  it("reports failure when dag/import errors and the DAG is not local", async () => {
+    const fetchImpl = mockFetch((u) => {
+      if (u.includes("format=car")) return { body: "CARBYTES" };
+      if (u.includes("/api/v0/dag/import"))
+        return { status: 500, body: "boom" };
+      if (u.includes("/api/v0/dag/stat"))
+        return { status: 500, body: "missing" };
+      throw new Error(`unexpected ${u}`);
+    });
+
+    const r = await importCidFromGateway(CID, { ...DEPS, fetchImpl });
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("import_500");
+  });
 });

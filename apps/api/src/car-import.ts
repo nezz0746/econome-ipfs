@@ -16,6 +16,8 @@ export interface ImportResult {
   error?: string;
   blocks?: number;
   bytes?: number;
+  /** True when dag/import errored on its response but the DAG was in fact written. */
+  recovered?: boolean;
 }
 
 export interface ImportDeps {
@@ -24,6 +26,36 @@ export interface ImportDeps {
   /** kubo HTTP API base, e.g. http://kubo:5001 */
   ipfsApiUrl: string;
   fetchImpl?: typeof fetch;
+}
+
+/**
+ * Cumulative DAG size for a CID via kubo `dag/stat`, or null if it can't be
+ * resolved within `timeoutMs`. When the DAG is already local this returns fast;
+ * when blocks are missing kubo would fetch over the network, so the timeout
+ * doubles as a "not local" signal.
+ */
+async function localDagSize(
+  cid: string,
+  api: string,
+  fetchImpl: typeof fetch,
+  timeoutMs = 10000,
+): Promise<number | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(
+      `${api}/api/v0/dag/stat?arg=${encodeURIComponent(cid)}&progress=false`,
+      { method: "POST", signal: controller.signal },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as Record<string, unknown>;
+    const size = Number(body.Size ?? body.size);
+    return Number.isFinite(size) ? size : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function importCidFromGateway(
@@ -70,6 +102,13 @@ export async function importCidFromGateway(
   }
   if (!impRes.ok) {
     const detail = await impRes.text().catch(() => "");
+    // dag/import can return an error *after* the blocks were written (the pin or
+    // response step fails), leaving the DAG actually local. Verify before
+    // reporting failure: if dag/stat resolves the DAG, the import succeeded.
+    const recoveredSize = await localDagSize(cid, api, fetchImpl);
+    if (recoveredSize != null) {
+      return { cid, ok: true, bytes: recoveredSize, recovered: true };
+    }
     return {
       cid,
       ok: false,

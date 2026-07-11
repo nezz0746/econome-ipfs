@@ -5,12 +5,14 @@ import {
   Files,
   KeyRound,
   LayoutDashboard,
+  Loader2,
   Network,
   Upload,
   UserPlus,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 
 import { NavUser } from "@/components/nav-user";
 import {
@@ -45,6 +47,17 @@ export function AppSidebar({
   user: { name?: string; email: string };
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [target, setTarget] = useState<string | null>(null);
+
+  // Navigate inside a transition so we can show a per-item loader while the
+  // next route's server components stream in.
+  const go = (url: string) => {
+    if (url === pathname) return;
+    setTarget(url);
+    startTransition(() => router.push(url));
+  };
 
   return (
     <Sidebar collapsible="icon">
@@ -56,7 +69,9 @@ export function AppSidebar({
                 <Boxes className="size-4" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-heading text-base">L&apos;Économe</span>
+                <span className="truncate font-heading text-base">
+                  L&apos;Économe
+                </span>
                 <span className="truncate text-xs text-muted-foreground">
                   IPFS Storage Center
                 </span>
@@ -70,18 +85,37 @@ export function AppSidebar({
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {NAV.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton
-                    render={<Link href={item.url} />}
-                    isActive={isActive(pathname, item.url)}
-                    tooltip={item.title}
-                  >
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {NAV.map((item) => {
+                const pending = isPending && target === item.url;
+                return (
+                  <SidebarMenuItem key={item.url}>
+                    <SidebarMenuButton
+                      render={<Link href={item.url} />}
+                      onClick={(e) => {
+                        // Left-click only; let modifier/middle-clicks open a tab.
+                        if (
+                          e.metaKey ||
+                          e.ctrlKey ||
+                          e.shiftKey ||
+                          e.button !== 0
+                        )
+                          return;
+                        e.preventDefault();
+                        go(item.url);
+                      }}
+                      isActive={isActive(pathname, item.url)}
+                      tooltip={item.title}
+                    >
+                      {pending ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <item.icon />
+                      )}
+                      <span>{item.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
