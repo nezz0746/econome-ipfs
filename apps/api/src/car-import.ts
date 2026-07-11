@@ -69,7 +69,12 @@ export async function importCidFromGateway(
     return { cid, ok: false, error: "import_error" };
   }
   if (!impRes.ok) {
-    return { cid, ok: false, error: `import_${impRes.status}` };
+    const detail = await impRes.text().catch(() => "");
+    return {
+      cid,
+      ok: false,
+      error: `import_${impRes.status}: ${detail.slice(0, 300)}`,
+    };
   }
 
   // 3. Parse kubo's ndjson response; confirm an imported root equals `cid`.
