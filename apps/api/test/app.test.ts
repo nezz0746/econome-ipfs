@@ -205,6 +205,64 @@ describe("POST /ingest/pin", () => {
   });
 });
 
+describe("POST /ingest/record", () => {
+  it("rejects without an api key", async () => {
+    const recordUpload = vi.fn(async () => {});
+    const res = await createApp(makeDeps({ recordUpload })).request(
+      "/ingest/record",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ files: [{ cid: "bafy1", size: 10 }] }),
+      },
+    );
+    expect(res.status).toBe(401);
+    expect(recordUpload).not.toHaveBeenCalled();
+  });
+
+  it("records each {cid,size} and skips invalid entries", async () => {
+    const recordUpload = vi.fn(async () => {});
+    const res = await createApp(makeDeps({ recordUpload })).request(
+      "/ingest/record",
+      {
+        method: "POST",
+        headers: { "x-api-key": "k", "content-type": "application/json" },
+        body: JSON.stringify({
+          files: [
+            { cid: "bafy1", size: 10, name: "a.json" },
+            { cid: "bafy2", size: 20 },
+            { cid: "", size: 5 }, // invalid → skipped
+            { size: 5 }, // invalid → skipped
+          ],
+        }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ recorded: 2, skipped: 2 });
+    expect(recordUpload).toHaveBeenCalledWith({
+      cid: "bafy1",
+      name: "a.json",
+      size: 10,
+      apiKeyId: "key-1",
+    });
+    expect(recordUpload).toHaveBeenCalledWith({
+      cid: "bafy2",
+      name: null,
+      size: 20,
+      apiKeyId: "key-1",
+    });
+  });
+
+  it("rejects an empty files array", async () => {
+    const res = await createApp(makeDeps()).request("/ingest/record", {
+      method: "POST",
+      headers: { "x-api-key": "k", "content-type": "application/json" },
+      body: JSON.stringify({ files: [] }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("POST /ingest/import", () => {
   beforeEach(() => {
     importMock.mockReset();

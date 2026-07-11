@@ -222,6 +222,59 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
     return c.json({ imported, failed: results.length - imported, results });
   });
 
+  // Backfill: record already-stored CIDs (with sizes) in the uploads table so
+  // they show on the Files page. For content migrated via pin/import, which
+  // stores bytes without an upload record. DB-only (no kubo/gateway), idempotent.
+  app.post("/ingest/record", apiKeyAuth(deps.findApiKey), async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid JSON body" }, 400);
+    }
+
+    const files = (body as { files?: unknown }).files;
+    if (
+      !Array.isArray(files) ||
+      files.length === 0 ||
+      files.length > PIN_BATCH_MAX
+    ) {
+      return c.json(
+        {
+          error: `expected 'files' to be a non-empty array of up to ${PIN_BATCH_MAX} {cid,size} entries`,
+        },
+        400,
+      );
+    }
+
+    const apiKeyId = c.get("apiKeyId") ?? null;
+    let recorded = 0;
+    let skipped = 0;
+    for (const f of files) {
+      const cid = (f as { cid?: unknown }).cid;
+      const size = Number((f as { size?: unknown }).size);
+      const name = (f as { name?: unknown }).name;
+      if (
+        typeof cid !== "string" ||
+        cid.length === 0 ||
+        !Number.isFinite(size)
+      ) {
+        skipped += 1;
+        continue;
+      }
+      await deps
+        .recordUpload({
+          cid,
+          name: typeof name === "string" ? name : null,
+          size,
+          apiKeyId,
+        })
+        .catch(() => {});
+      recorded += 1;
+    }
+    return c.json({ recorded, skipped });
+  });
+
   // Unpin + forget a CID (used by external integrations on asset deletion).
   app.delete("/ingest/:cid", apiKeyAuth(deps.findApiKey), async (c) => {
     const cid = c.req.param("cid");
