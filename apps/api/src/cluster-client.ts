@@ -134,6 +134,34 @@ export class ClusterClient {
     };
   }
 
+  /**
+   * Pin an existing CID across the cluster (POST /pins/{cid}). The cluster
+   * fetches the content over the IPFS network and replicates it per the
+   * replication factor. Preserves the CID — used to migrate a pinset off
+   * another pinning service without re-hashing.
+   */
+  async pinByCid(
+    cid: string,
+    opts: { replicationMin?: number; replicationMax?: number } = {},
+  ): Promise<void> {
+    const params = new URLSearchParams();
+    if (opts.replicationMin !== undefined)
+      params.set("replication-min", String(opts.replicationMin));
+    if (opts.replicationMax !== undefined)
+      params.set("replication-max", String(opts.replicationMax));
+    const qs = params.toString();
+
+    const res = await this.fetchImpl(
+      `${this.baseUrl}/pins/${cid}${qs ? `?${qs}` : ""}`,
+      { method: "POST" },
+    );
+    if (!res.ok) {
+      throw new Error(
+        `Cluster pin ${cid} failed: ${res.status} ${res.statusText}`,
+      );
+    }
+  }
+
   /** Unpin a CID from the cluster (DELETE /pins/{cid}). */
   async unpin(cid: string): Promise<void> {
     const res = await this.fetchImpl(`${this.baseUrl}/pins/${cid}`, {

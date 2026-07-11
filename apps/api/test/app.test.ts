@@ -28,6 +28,7 @@ function fakeCluster(overrides: Partial<ClusterClient> = {}): ClusterClient {
     })),
     metrics: vi.fn(async () => []),
     unpin: vi.fn(async () => {}),
+    pinByCid: vi.fn(async () => {}),
     ...overrides,
   } as unknown as ClusterClient;
 }
@@ -111,6 +112,82 @@ describe("DELETE /ingest/:cid", () => {
     expect(res.status).toBe(200);
     expect(cluster.unpin).toHaveBeenCalledWith("bafycid");
     expect(forgetUpload).toHaveBeenCalledWith("bafycid");
+  });
+});
+
+describe("POST /ingest/pin", () => {
+  it("rejects without an api key and does not touch the cluster", async () => {
+    const cluster = fakeCluster();
+    const res = await createApp(makeDeps({ cluster })).request("/ingest/pin", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cids: ["bafyc1"] }),
+    });
+    expect(res.status).toBe(401);
+    expect(cluster.pinByCid).not.toHaveBeenCalled();
+  });
+
+  it("pins each cid with the configured replication and returns per-cid results", async () => {
+    const cluster = fakeCluster();
+    const res = await createApp(makeDeps({ cluster })).request("/ingest/pin", {
+      method: "POST",
+      headers: { "x-api-key": "k", "content-type": "application/json" },
+      body: JSON.stringify({ cids: ["bafyc1", "bafyc2"] }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      pinned: 2,
+      failed: 0,
+      results: [
+        { cid: "bafyc1", ok: true },
+        { cid: "bafyc2", ok: true },
+      ],
+    });
+    expect(cluster.pinByCid).toHaveBeenCalledWith("bafyc1", {
+      replicationMin: 2,
+      replicationMax: 3,
+    });
+    expect(cluster.pinByCid).toHaveBeenCalledWith("bafyc2", {
+      replicationMin: 2,
+      replicationMax: 3,
+    });
+  });
+
+  it("reports per-cid failures without failing the whole batch", async () => {
+    const cluster = fakeCluster({
+      pinByCid: vi.fn(async (cid: string) => {
+        if (cid === "bad") throw new Error("nope");
+      }),
+    });
+    const res = await createApp(makeDeps({ cluster })).request("/ingest/pin", {
+      method: "POST",
+      headers: { "x-api-key": "k", "content-type": "application/json" },
+      body: JSON.stringify({ cids: ["bafyc1", "bad"] }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      pinned: number;
+      failed: number;
+      results: { cid: string; ok: boolean; error?: string }[];
+    };
+    expect(body.pinned).toBe(1);
+    expect(body.failed).toBe(1);
+    expect(body.results).toContainEqual({
+      cid: "bad",
+      ok: false,
+      error: "nope",
+    });
+  });
+
+  it("rejects an empty cids array", async () => {
+    const cluster = fakeCluster();
+    const res = await createApp(makeDeps({ cluster })).request("/ingest/pin", {
+      method: "POST",
+      headers: { "x-api-key": "k", "content-type": "application/json" },
+      body: JSON.stringify({ cids: [] }),
+    });
+    expect(res.status).toBe(400);
+    expect(cluster.pinByCid).not.toHaveBeenCalled();
   });
 });
 

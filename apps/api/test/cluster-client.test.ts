@@ -130,6 +130,35 @@ describe("ClusterClient", () => {
     await expect(client.peers()).rejects.toThrow(/failed: 500/);
   });
 
+  it("pinByCid POSTs /pins/<cid> with replication params", async () => {
+    const fetchImpl = mockFetch({
+      "/pins/": {
+        status: 200,
+        body: JSON.stringify({ cid: { "/": "bafyc1" } }),
+      },
+    });
+    const client = new ClusterClient("http://cluster:9094", fetchImpl);
+
+    await expect(
+      client.pinByCid("bafyc1", { replicationMin: 2, replicationMax: 3 }),
+    ).resolves.toBeUndefined();
+
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const url = String(calls[0]?.[0]);
+    expect(url).toContain("/pins/bafyc1");
+    expect(url).toContain("replication-min=2");
+    expect(url).toContain("replication-max=3");
+    expect(calls[0]?.[1]).toMatchObject({ method: "POST" });
+  });
+
+  it("pinByCid throws on a non-ok response", async () => {
+    const fetchImpl = mockFetch({ "/pins/": { status: 500, body: "boom" } });
+    const client = new ClusterClient("http://cluster:9094", fetchImpl);
+    await expect(client.pinByCid("bafyc1")).rejects.toThrow(
+      /pin bafyc1 failed: 500/,
+    );
+  });
+
   it("parses /pins global status into per-peer status + timestamp", async () => {
     const fetchImpl = mockFetch({
       "/pins": {

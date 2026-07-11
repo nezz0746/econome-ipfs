@@ -29,6 +29,31 @@ export interface AppDeps {
 
 type Variables = { apiKeyId: string };
 
+/** Max CIDs accepted in a single pin-by-CID request. */
+const PIN_BATCH_MAX = 1000;
+/** In-flight pin requests to the cluster per batch. */
+const PIN_CONCURRENCY = 8;
+
+/** Run `fn` over `items` with at most `limit` in flight; preserves order. */
+async function mapPool<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i] as T);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+  return results;
+}
+
 export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
   const app = new Hono<{ Variables: Variables }>();
 
@@ -61,6 +86,57 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
     });
 
     return c.json({ cid: result.cid, name: result.name, size: result.size });
+  });
+
+  // Pin existing CIDs into the cluster — e.g. migrating a pinset off another
+  // pinning service. Preserves CIDs; the cluster fetches the content over the
+  // IPFS network and replicates it. No upload record is written: size and
+  // provenance resolve later from Kubo (dag/stat), so we never seed a bogus 0.
+  app.post("/ingest/pin", apiKeyAuth(deps.findApiKey), async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid JSON body" }, 400);
+    }
+
+    const cids = (body as { cids?: unknown }).cids;
+    if (
+      !Array.isArray(cids) ||
+      cids.length === 0 ||
+      cids.length > PIN_BATCH_MAX ||
+      !cids.every((cid) => typeof cid === "string" && cid.length > 0)
+    ) {
+      return c.json(
+        {
+          error: `expected 'cids' to be a non-empty array of up to ${PIN_BATCH_MAX} CID strings`,
+        },
+        400,
+      );
+    }
+
+    const results = await mapPool(
+      cids as string[],
+      PIN_CONCURRENCY,
+      async (cid) => {
+        try {
+          await deps.cluster.pinByCid(cid, {
+            replicationMin: deps.replication.min,
+            replicationMax: deps.replication.max,
+          });
+          return { cid, ok: true as const };
+        } catch (e) {
+          return {
+            cid,
+            ok: false as const,
+            error: e instanceof Error ? e.message : "pin failed",
+          };
+        }
+      },
+    );
+
+    const failed = results.filter((r) => !r.ok).length;
+    return c.json({ pinned: results.length - failed, failed, results });
   });
 
   // Unpin + forget a CID (used by external integrations on asset deletion).
