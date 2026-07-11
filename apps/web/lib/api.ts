@@ -49,6 +49,20 @@ export function getOverview(): Promise<ClusterOverview> {
   return gatewayFetch<ClusterOverview>("/overview");
 }
 
+export interface PinProgress {
+  total: number;
+  pinned: number;
+  pinning: number;
+  queued: number;
+  error: number;
+  other: number;
+}
+
+/** Live migration/pin progress across the pinset. */
+export function getPinProgress(): Promise<PinProgress> {
+  return gatewayFetch<PinProgress>("/pin-progress");
+}
+
 export function getPeers(): Promise<Peer[]> {
   return gatewayFetch<Peer[]>("/peers");
 }

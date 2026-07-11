@@ -93,9 +93,15 @@ export function createPeerService(deps: PeerServiceDeps): PeerService {
         deps.readLastSnapshots(),
         deps.readLastOffline(),
       ]);
+    // Request path: resolve sizes from cache/uploads only. A large, freshly
+    // pinned set would otherwise stall this response on thousands of Kubo
+    // dag/stat calls; the background accounting job fills any gaps.
     const sizeByCid = await resolveSizes(
       pins.map((p) => p.cid),
       sizeDeps,
+      {
+        cachedOnly: true,
+      },
     );
     const lastSnapshotByPeer = new Map(
       lastSnaps.map((s) => [

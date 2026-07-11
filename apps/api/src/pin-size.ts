@@ -11,14 +11,26 @@ export interface SizeDeps {
   fetchImpl?: typeof fetch;
 }
 
+export interface ResolveOpts {
+  /**
+   * Skip the Kubo `dag/stat` fallback and resolve only from cache/uploads.
+   * Used on request paths (e.g. the peers dashboard) so a large, freshly-pinned
+   * pinset can't stall the response on thousands of DAG walks — those sizes are
+   * filled in later by the background accounting job.
+   */
+  cachedOnly?: boolean;
+}
+
 /**
  * Resolve a CID's byte size. Cache -> uploads.size -> Kubo dag/stat. A CID's
  * size is immutable, so any resolved value is cached forever. Best-effort:
- * returns null if every source fails.
+ * returns null if every source fails. With `cachedOnly`, the Kubo fallback is
+ * skipped (returns null instead of walking the DAG).
  */
 export async function resolveSize(
   cid: string,
   deps: SizeDeps,
+  opts: ResolveOpts = {},
 ): Promise<number | null> {
   const cached = await deps.getCached(cid);
   if (cached != null) return cached;
@@ -28,6 +40,8 @@ export async function resolveSize(
     await deps.setCached(cid, fromUpload, "upload");
     return fromUpload;
   }
+
+  if (opts.cachedOnly) return null;
 
   const fetchImpl = deps.fetchImpl ?? fetch;
   try {
@@ -50,10 +64,13 @@ export async function resolveSize(
 export async function resolveSizes(
   cids: string[],
   deps: SizeDeps,
+  opts: ResolveOpts = {},
 ): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   const unique = [...new Set(cids)];
-  const sizes = await Promise.all(unique.map((cid) => resolveSize(cid, deps)));
+  const sizes = await Promise.all(
+    unique.map((cid) => resolveSize(cid, deps, opts)),
+  );
   unique.forEach((cid, i) => {
     const size = sizes[i];
     if (size != null) map.set(cid, size);

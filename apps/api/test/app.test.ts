@@ -32,6 +32,16 @@ function fakeCluster(overrides: Partial<ClusterClient> = {}): ClusterClient {
     metrics: vi.fn(async () => []),
     unpin: vi.fn(async () => {}),
     pinByCid: vi.fn(async () => {}),
+    pinStatuses: vi.fn(async () => [
+      {
+        cid: "bafycid",
+        peers: { "peer-a": { status: "pinned", timestamp: "" } },
+      },
+      {
+        cid: "bafy2",
+        peers: { "peer-a": { status: "pinning", timestamp: "" } },
+      },
+    ]),
     ...overrides,
   } as unknown as ClusterClient;
 }
@@ -221,9 +231,10 @@ describe("POST /ingest/import", () => {
     expect(cluster.pinByCid).not.toHaveBeenCalled();
   });
 
-  it("imports each cid (default gateway) and tracks it in the cluster", async () => {
+  it("imports each cid, tracks it, and records it for the Files page", async () => {
     const cluster = fakeCluster();
-    const res = await createApp(makeDeps({ cluster })).request(
+    const recordUpload = vi.fn(async () => {});
+    const res = await createApp(makeDeps({ cluster, recordUpload })).request(
       "/ingest/import",
       {
         method: "POST",
@@ -241,6 +252,13 @@ describe("POST /ingest/import", () => {
     expect(cluster.pinByCid).toHaveBeenCalledWith("bafy1", {
       replicationMin: 2,
       replicationMax: 3,
+    });
+    // importMock returns bytes: 10 → recorded as the upload size (real DAG size).
+    expect(recordUpload).toHaveBeenCalledWith({
+      cid: "bafy1",
+      name: null,
+      size: 10,
+      apiKeyId: "key-1",
     });
   });
 
@@ -314,6 +332,26 @@ describe("cluster gateway", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toHaveLength(2);
+  });
+
+  it("summarizes pin progress from cluster statuses", async () => {
+    const res = await createApp(makeDeps()).request("/cluster/pin-progress", {
+      headers: { "x-internal-token": "tok" },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      total: 2,
+      pinned: 1,
+      pinning: 1,
+      queued: 0,
+      error: 0,
+      other: 0,
+    });
+  });
+
+  it("requires the internal token for pin-progress", async () => {
+    const res = await createApp(makeDeps()).request("/cluster/pin-progress");
+    expect(res.status).toBe(401);
   });
 
   it("computes overview (under-replicated counts)", async () => {

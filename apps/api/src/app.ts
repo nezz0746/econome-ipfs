@@ -6,6 +6,7 @@ import { type ApiKeyRecord, apiKeyAuth, internalAuth } from "./auth";
 import { importCidFromGateway } from "./car-import";
 import type { ClusterClient } from "./cluster-client";
 import type { PeerService } from "./peer-service";
+import { summarizePinProgress } from "./pin-progress";
 
 export interface RecordedUpload {
   cid: string;
@@ -180,6 +181,7 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
       );
     }
 
+    const apiKeyId = c.get("apiKeyId") ?? null;
     const results = await mapPool(
       cids as string[],
       IMPORT_CONCURRENCY,
@@ -204,6 +206,13 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
               e instanceof Error ? e.message : "unknown"
             }`,
           };
+        }
+        // Record it (with the real DAG size) so it shows on the Files page and
+        // its size resolves instantly (no dag/stat). Idempotent, best-effort.
+        if (typeof r.bytes === "number" && r.bytes > 0) {
+          await deps
+            .recordUpload({ cid, name: null, size: r.bytes, apiKeyId })
+            .catch(() => {});
         }
         return r;
       },
@@ -237,6 +246,12 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
   });
   gateway.get("/pins", async (c) => c.json(await deps.cluster.pins()));
   gateway.get("/health", async (c) => c.json(await deps.cluster.healthGraph()));
+
+  // Live migration/pin progress: how much of the pinset is pinned vs still
+  // being fetched. Cheap (one cluster status call, no per-CID DAG walks).
+  gateway.get("/pin-progress", async (c) =>
+    c.json(summarizePinProgress(await deps.cluster.pinStatuses())),
+  );
 
   gateway.get("/overview", async (c) => {
     const [peers, pins] = await Promise.all([

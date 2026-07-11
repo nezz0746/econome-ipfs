@@ -170,6 +170,14 @@ const app = createApp({
     return row;
   },
   async recordUpload(upload: RecordedUpload) {
+    // Idempotent on CID (the uploads table has no unique constraint, and the
+    // migration path may re-record the same CID): skip if already present.
+    const [existing] = await db
+      .select({ id: uploads.id })
+      .from(uploads)
+      .where(eq(uploads.cid, upload.cid))
+      .limit(1);
+    if (existing) return;
     await db.insert(uploads).values({
       cid: upload.cid,
       name: upload.name,
