@@ -4,14 +4,21 @@ import { logger } from "hono/logger";
 
 import { type ApiKeyRecord, apiKeyAuth, internalAuth } from "./auth";
 import { importCidFromGateway } from "./car-import";
-import type { ClusterClient } from "./cluster-client";
+import type { ClusterClient, PinOptions } from "./cluster-client";
 import type { PeerService } from "./peer-service";
 import { summarizePinProgress } from "./pin-progress";
+import {
+  desiredAllocations,
+  parseTags,
+  TAGS_META_KEY,
+  type TagSubscription,
+} from "./tags";
 
 export interface RecordedUpload {
   cid: string;
   name: string | null;
   size: number;
+  tags: string[];
   apiKeyId: string | null;
 }
 
@@ -24,6 +31,8 @@ export interface AppDeps {
   recordUpload: (upload: RecordedUpload) => Promise<void>;
   /** Remove ingest records for a CID (called when it is unpinned). */
   forgetUpload: (cid: string) => Promise<void>;
+  /** Participants' tag subscriptions, to resolve tagged-pin allocations. */
+  listTagSubscriptions: () => Promise<TagSubscription[]>;
   replication: { min: number; max: number };
   /** kubo HTTP API base (e.g. http://kubo:5001), for CID-preserving CAR import. */
   ipfsApiUrl: string;
@@ -69,6 +78,43 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
   app.use("*", logger());
   app.use("*", cors());
 
+  // The cluster peer id is static for the process; resolve it once, lazily,
+  // and retry on failure rather than caching a rejection.
+  let mainPeerId: Promise<string> | null = null;
+  const getMainPeerId = () => {
+    mainPeerId ??= deps.cluster.id().catch((err) => {
+      mainPeerId = null;
+      throw err;
+    });
+    return mainPeerId;
+  };
+
+  /**
+   * Pin options for the given tags. Untagged content keeps the env replication
+   * factor (default -1: everyone pins). Tagged content is allocated explicitly
+   * to the main peer + subscribed participants, and carries its tags in pin
+   * metadata so the reallocation job can reconcile it later.
+   */
+  async function pinOptionsForTags(tags: string[]): Promise<PinOptions> {
+    if (tags.length === 0) {
+      return {
+        replicationMin: deps.replication.min,
+        replicationMax: deps.replication.max,
+      };
+    }
+    const [main, subscriptions] = await Promise.all([
+      getMainPeerId(),
+      deps.listTagSubscriptions(),
+    ]);
+    const allocations = desiredAllocations(tags, main, subscriptions);
+    return {
+      replicationMin: 1,
+      replicationMax: allocations.length,
+      userAllocations: allocations,
+      metadata: { [TAGS_META_KEY]: tags.join(",") },
+    };
+  }
+
   app.get("/health", (c) => c.json({ ok: true }));
 
   // ----- Ingest (machine clients, API-key gated) -------------------------
@@ -78,23 +124,33 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
     if (!(file instanceof File)) {
       return c.json({ error: "expected multipart field 'file'" }, 400);
     }
+    const tags = parseTags(body.tags);
+    if (tags === null) {
+      return c.json(
+        { error: "invalid 'tags': comma-separated lowercase slugs expected" },
+        400,
+      );
+    }
 
     const form = new FormData();
     form.append("file", file, file.name);
 
-    const result = await deps.cluster.add(form, {
-      replicationMin: deps.replication.min,
-      replicationMax: deps.replication.max,
-    });
+    const result = await deps.cluster.add(form, await pinOptionsForTags(tags));
 
     await deps.recordUpload({
       cid: result.cid,
       name: file.name || null,
       size: result.size,
+      tags,
       apiKeyId: c.get("apiKeyId") ?? null,
     });
 
-    return c.json({ cid: result.cid, name: result.name, size: result.size });
+    return c.json({
+      cid: result.cid,
+      name: result.name,
+      size: result.size,
+      tags,
+    });
   });
 
   // Pin existing CIDs into the cluster — e.g. migrating a pinset off another
@@ -123,16 +179,21 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
         400,
       );
     }
+    const tags = parseTags((body as { tags?: unknown }).tags);
+    if (tags === null) {
+      return c.json(
+        { error: "invalid 'tags': array of lowercase slugs expected" },
+        400,
+      );
+    }
+    const pinOpts = await pinOptionsForTags(tags);
 
     const results = await mapPool(
       cids as string[],
       PIN_CONCURRENCY,
       async (cid) => {
         try {
-          await deps.cluster.pinByCid(cid, {
-            replicationMin: deps.replication.min,
-            replicationMax: deps.replication.max,
-          });
+          await deps.cluster.pinByCid(cid, pinOpts);
           return { cid, ok: true as const };
         } catch (e) {
           return {
@@ -180,6 +241,14 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
         400,
       );
     }
+    const tags = parseTags((body as { tags?: unknown }).tags);
+    if (tags === null) {
+      return c.json(
+        { error: "invalid 'tags': array of lowercase slugs expected" },
+        400,
+      );
+    }
+    const pinOpts = await pinOptionsForTags(tags);
 
     const apiKeyId = c.get("apiKeyId") ?? null;
     const results = await mapPool(
@@ -194,10 +263,7 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
         // Content is now local in kubo; tracking it in the cluster completes
         // instantly and replicates it to followers.
         try {
-          await deps.cluster.pinByCid(cid, {
-            replicationMin: deps.replication.min,
-            replicationMax: deps.replication.max,
-          });
+          await deps.cluster.pinByCid(cid, pinOpts);
         } catch (e) {
           return {
             ...r,
@@ -211,7 +277,7 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
         // its size resolves instantly (no dag/stat). Idempotent, best-effort.
         if (typeof r.bytes === "number" && r.bytes > 0) {
           await deps
-            .recordUpload({ cid, name: null, size: r.bytes, apiKeyId })
+            .recordUpload({ cid, name: null, size: r.bytes, tags, apiKeyId })
             .catch(() => {});
         }
         return r;
@@ -267,6 +333,7 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
           cid,
           name: typeof name === "string" ? name : null,
           size,
+          tags: [],
           apiKeyId,
         })
         .catch(() => {});

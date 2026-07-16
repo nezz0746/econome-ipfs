@@ -8,9 +8,25 @@ import { parseJoinUrl } from "../lib/join-url.js";
 import { pollPeerId } from "../lib/peer.js";
 import { projectDir, writeProject } from "../lib/project.js";
 import { registerPeer } from "../lib/register.js";
+import { parseTagsInput } from "../lib/tags.js";
 
-export async function join(url?: string): Promise<void> {
+export async function join(url?: string, rawTags?: string): Promise<void> {
   p.intro("Econome follower");
+
+  // Replication tags: which tagged collections this follower subscribes to,
+  // on top of the untagged base pinset. Undefined = operator defaults.
+  let tags: string[] | undefined;
+  if (rawTags !== undefined) {
+    const parsed = parseTagsInput(rawTags);
+    if (parsed === null) {
+      p.cancel(
+        "Invalid --tags: use comma-separated lowercase slugs (e.g. photos,videos).",
+      );
+      process.exitCode = 1;
+      return;
+    }
+    tags = parsed;
+  }
 
   // 1. Resolve the join URL (prompt if not given).
   let joinUrl = url;
@@ -110,8 +126,12 @@ export async function join(url?: string): Promise<void> {
   const regSpin = p.spinner();
   regSpin.start("Registering with the dashboard");
   try {
-    await registerPeer(origin, token, peerId);
-    regSpin.stop("Registered");
+    await registerPeer(origin, token, peerId, tags);
+    regSpin.stop(
+      tags && tags.length > 0
+        ? `Registered (tags: ${tags.join(", ")})`
+        : "Registered",
+    );
   } catch {
     regSpin.stop("Could not register (the follower is still running)");
     p.log.warn("Registration failed; re-run `econome join` later to retry.");

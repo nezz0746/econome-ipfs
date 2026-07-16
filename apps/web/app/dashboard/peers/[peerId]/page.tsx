@@ -1,8 +1,18 @@
 import { notFound } from "next/navigation";
 import { ContributionChart } from "@/components/contribution-chart";
 import { PageHeader } from "@/components/page-header";
+import { TagBadges } from "@/components/tag-badges";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -11,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { updateParticipantTags } from "@/lib/actions";
 import { getPeerDetail } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
 
@@ -67,6 +78,41 @@ export default async function PeerDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Replication tags</CardTitle>
+          <CardDescription>
+            This peer replicates the untagged base pinset, plus content tagged
+            with any of its subscriptions. Changes converge on the next
+            reallocation pass.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Subscribed to</span>
+            <TagBadges
+              tags={peer.subscribedTags}
+              emptyLabel="base pinset only"
+            />
+          </div>
+          <form action={updateParticipantTags} className="flex items-end gap-3">
+            <input type="hidden" name="peerId" value={peer.id} />
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="tags">Edit subscriptions</Label>
+              <Input
+                id="tags"
+                name="tags"
+                defaultValue={peer.subscribedTags.join(",")}
+                placeholder="e.g. photos,archive — empty for base pinset only"
+              />
+            </div>
+            <Button type="submit" variant="outline">
+              Save
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

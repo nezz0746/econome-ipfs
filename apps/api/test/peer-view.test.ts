@@ -21,6 +21,7 @@ const pins: PinInfo[] = [
     allocations: [],
     replicationFactorMin: -1,
     replicationFactorMax: -1,
+    metadata: {},
   },
   {
     cid: "c2",
@@ -28,6 +29,7 @@ const pins: PinInfo[] = [
     allocations: [],
     replicationFactorMin: -1,
     replicationFactorMax: -1,
+    metadata: {},
   },
 ];
 
@@ -99,12 +101,14 @@ describe("buildEnrichedPeers online/offline history", () => {
         {
           peerId: "peer-a",
           label: "main",
+          subscribedTags: [],
           firstSeenAt: firstSeen,
           lastSeenAt: lastSeen,
         },
         {
           peerId: "gone",
           label: "old-follower",
+          subscribedTags: ["photos"],
           firstSeenAt: firstSeen,
           lastSeenAt: lastSeen,
         },

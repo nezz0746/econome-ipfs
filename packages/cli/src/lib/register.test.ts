@@ -22,6 +22,29 @@ describe("registerPeer", () => {
     );
   });
 
+  it("includes tags when provided (omits the field otherwise)", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true }),
+    }));
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+
+    await registerPeer("https://host", "onb_x", "12D3KooWAbc", [
+      "photos",
+      "archive",
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://host/join/onb_x/register",
+      expect.objectContaining({
+        body: JSON.stringify({
+          peerId: "12D3KooWAbc",
+          tags: ["photos", "archive"],
+        }),
+      }),
+    );
+  });
+
   it("throws when the server rejects", async () => {
     vi.stubGlobal(
       "fetch",

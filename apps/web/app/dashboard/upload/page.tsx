@@ -26,6 +26,7 @@ export default function UploadPage() {
     const form = e.currentTarget;
     const formData = new FormData(form);
     const apiKey = String(formData.get("apiKey") ?? "");
+    const tags = String(formData.get("tags") ?? "");
     const files = formData
       .getAll("file")
       .filter((f): f is File => f instanceof File && f.size > 0);
@@ -56,6 +57,7 @@ export default function UploadPage() {
       toUpload.map((file) => {
         const fd = new FormData();
         fd.append("apiKey", apiKey);
+        fd.append("tags", tags);
         fd.append("file", file, file.name);
         return testUpload(fd);
       }),
@@ -96,6 +98,15 @@ export default function UploadPage() {
               <Input id="file" name="file" type="file" multiple required />
               <p className="text-xs text-muted-foreground">
                 Max {MAX_UPLOAD_MB} MB per file. Batch uploads supported.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tags">Tags (optional)</Label>
+              <Input id="tags" name="tags" placeholder="e.g. photos,archive" />
+              <p className="text-xs text-muted-foreground">
+                Tagged content is replicated only by the main node and
+                participants subscribed to one of its tags. Untagged content is
+                replicated by everyone.
               </p>
             </div>
             <Button type="submit" disabled={pending}>

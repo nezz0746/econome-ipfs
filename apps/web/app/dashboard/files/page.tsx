@@ -4,6 +4,7 @@ import { ExternalLink } from "lucide-react";
 
 import { CopyButton } from "@/components/copy-button";
 import { PageHeader } from "@/components/page-header";
+import { TagBadges } from "@/components/tag-badges";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -56,6 +57,7 @@ function selectPage(
       cid: uploads.cid,
       name: uploads.name,
       size: uploads.size,
+      tags: uploads.tags,
       createdAt: uploads.createdAt,
       total: sql<number>`count(*) over()`.mapWith(Number),
     })
@@ -132,6 +134,7 @@ export default async function FilesPage({
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>CID</TableHead>
+                    <TableHead>Tags</TableHead>
                     <TableHead>Size</TableHead>
                     <TableHead>Added</TableHead>
                     <TableHead className="text-right">Open</TableHead>
@@ -150,6 +153,9 @@ export default async function FilesPage({
                           </code>
                           <CopyButton value={file.cid} label="CID copied" />
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <TagBadges tags={file.tags} />
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatBytes(file.size)}

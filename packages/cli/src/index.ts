@@ -10,10 +10,15 @@ program
 program
   .command("join")
   .argument("[url]", "join URL from the dashboard onboarding page")
+  .option(
+    "-t, --tags <tags>",
+    "comma-separated replication tags to subscribe to (e.g. photos,videos); " +
+      "omit to use the defaults set by the operator",
+  )
   .description("Start a follower that replicates the cluster pinset")
-  .action(async (url?: string) => {
+  .action(async (url: string | undefined, opts: { tags?: string }) => {
     const { join } = await import("./commands/join.js");
-    await join(url);
+    await join(url, opts.tags);
   });
 
 program

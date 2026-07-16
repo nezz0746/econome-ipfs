@@ -13,6 +13,12 @@ export interface IpfsStorageOptions {
   /** Public IPFS gateway used to serve content, e.g. https://ipfs.io */
   gatewayUrl: string;
   /**
+   * Replication tags applied to every upload. Tagged content is replicated
+   * only by the main node and participants subscribed to one of the tags;
+   * omit for full replication.
+   */
+  tags?: string[];
+  /**
    * Upload collections to route to IPFS. `true` enables defaults; an object
    * lets you tweak per-collection options.
    */
@@ -61,6 +67,9 @@ function ipfsAdapter(options: IpfsStorageOptions): Adapter {
         new Blob([new Uint8Array(file.buffer)], { type: file.mimeType }),
         file.filename,
       );
+      if (options.tags && options.tags.length > 0) {
+        form.append("tags", options.tags.join(","));
+      }
       const res = await fetch(`${base}/ingest`, {
         method: "POST",
         headers: authHeader,

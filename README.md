@@ -25,6 +25,17 @@ pinned and replicated out to participants.
    PARTICIPANTS:  Kubo + ipfs-cluster-follow  ───────────┘
 ```
 
+### Partial replication (tags)
+
+By default every participant replicates the whole pinset (replication factor
+-1). Content can optionally be **tagged** at ingest (`tags` field on `/ingest`,
+`/ingest/pin`, `/ingest/import`); tagged content is pinned only to the main
+peer plus participants **subscribed** to one of its tags (via explicit
+`user-allocations` on the cluster pin). Subscriptions are chosen at join time
+(`econome join --tags photos,videos`, or defaults set on the onboarding token)
+and editable per peer in the dashboard. A background reallocation job re-pins
+tagged CIDs whenever the subscriber set changes.
+
 - **`apps/web`** — Next 16 dashboard. Better Auth (multi-user), peer/follower
   monitoring, cluster health, participant onboarding, API-key management, and a
   test upload. Talks to the API server-side (BFF) with an internal token.

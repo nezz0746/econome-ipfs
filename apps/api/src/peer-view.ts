@@ -5,6 +5,7 @@ import { extractPublicIp } from "./net";
 export interface ParticipantRow {
   peerId: string;
   label: string | null;
+  subscribedTags: string[];
   firstSeenAt: Date;
   lastSeenAt: Date;
 }
@@ -34,6 +35,8 @@ export interface EnrichedPeer {
   geo: Geo | null;
   bytesHeld: number;
   fileCount: number;
+  /** Tag subscriptions (known participants only; empty = base pinset only). */
+  subscribedTags: string[];
   firstSeenAt: Date | null;
   lastSeenAt: Date | null;
   /** When the current online session began (online peers only), else null. */
@@ -93,6 +96,7 @@ function enrichOne(peer: ClusterPeer, input: PeerViewInput): EnrichedPeer {
     geo: publicIp ? (input.geoByIp.get(publicIp) ?? null) : null,
     bytesHeld,
     fileCount: held.length,
+    subscribedTags: participant?.subscribedTags ?? [],
     firstSeenAt: participant?.firstSeenAt ?? null,
     lastSeenAt: participant?.lastSeenAt ?? null,
     // Session started just after the last recorded offline snapshot; fall back
@@ -119,6 +123,7 @@ function buildOfflinePeer(
     geo: null,
     bytesHeld: last?.bytesHeld ?? 0,
     fileCount: last?.cidCount ?? 0,
+    subscribedTags: participant.subscribedTags,
     firstSeenAt: participant.firstSeenAt,
     lastSeenAt: participant.lastSeenAt,
     onlineSince: null,

@@ -118,6 +118,8 @@ export const uploads = pgTable(
     cid: text("cid").notNull(),
     name: text("name"),
     size: bigint("size", { mode: "number" }).notNull().default(0),
+    /** Replication tags. Tagged content is pinned only to subscribed peers. */
+    tags: text("tags").array().notNull().default([]),
     apiKeyId: uuid("api_key_id").references(() => apiKeys.id, {
       onDelete: "set null",
     }),
@@ -132,6 +134,11 @@ export const participants = pgTable("participants", {
   id: uuid("id").defaultRandom().primaryKey(),
   peerId: text("peer_id").notNull().unique(),
   label: text("label"),
+  /**
+   * Tags this participant replicates. Every participant replicates the
+   * untagged base pinset; subscriptions opt them into tagged collections.
+   */
+  subscribedTags: text("subscribed_tags").array().notNull().default([]),
   onboardingTokenId: uuid("onboarding_token_id"),
   firstSeenAt: timestamp("first_seen_at").defaultNow().notNull(),
   lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
@@ -142,6 +149,8 @@ export const onboardingTokens = pgTable("onboarding_tokens", {
   id: uuid("id").defaultRandom().primaryKey(),
   token: text("token").notNull().unique(),
   label: text("label"),
+  /** Default tag subscriptions for the joining peer (CLI --tags overrides). */
+  tags: text("tags").array().notNull().default([]),
   createdBy: text("created_by").references(() => user.id, {
     onDelete: "set null",
   }),
