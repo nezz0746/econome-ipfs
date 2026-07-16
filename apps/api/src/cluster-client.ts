@@ -27,6 +27,35 @@ export interface PinInfo {
   allocations: string[];
   replicationFactorMin: number;
   replicationFactorMax: number;
+  /** Arbitrary pin metadata (set at pin time via `meta-*` params). */
+  metadata: Record<string, string>;
+}
+
+export interface PinOptions {
+  replicationMin?: number;
+  replicationMax?: number;
+  /** Explicit peers to allocate the pin to (priority list). */
+  userAllocations?: string[];
+  /** Pin name (shown in the pinset). */
+  name?: string;
+  /** Pin metadata, sent as `meta-<key>=<value>` params. */
+  metadata?: Record<string, string>;
+}
+
+/** Encode pin options as cluster REST query params (shared by add + pin). */
+function pinParams(opts: PinOptions): URLSearchParams {
+  const params = new URLSearchParams();
+  if (opts.replicationMin !== undefined)
+    params.set("replication-min", String(opts.replicationMin));
+  if (opts.replicationMax !== undefined)
+    params.set("replication-max", String(opts.replicationMax));
+  if (opts.userAllocations && opts.userAllocations.length > 0)
+    params.set("user-allocations", opts.userAllocations.join(","));
+  if (opts.name) params.set("name", opts.name);
+  for (const [key, value] of Object.entries(opts.metadata ?? {})) {
+    params.set(`meta-${key}`, value);
+  }
+  return params;
 }
 
 export interface HealthGraph {
@@ -104,16 +133,18 @@ export class ClusterClient {
     return res.text();
   }
 
+  /** The cluster peer id of the node this client talks to (the main peer). */
+  async id(): Promise<string> {
+    const raw = JSON.parse(await this.getText("/id")) as Record<string, any>;
+    const id = String(raw.id ?? "");
+    if (!id) throw new Error("Cluster /id returned no peer id");
+    return id;
+  }
+
   /** Add + pin content across the cluster. Returns the (root) added object. */
-  async add(
-    form: FormData,
-    opts: { replicationMin?: number; replicationMax?: number } = {},
-  ): Promise<AddResult> {
-    const params = new URLSearchParams({ "stream-channels": "false" });
-    if (opts.replicationMin !== undefined)
-      params.set("replication-min", String(opts.replicationMin));
-    if (opts.replicationMax !== undefined)
-      params.set("replication-max", String(opts.replicationMax));
+  async add(form: FormData, opts: PinOptions = {}): Promise<AddResult> {
+    const params = pinParams(opts);
+    params.set("stream-channels", "false");
 
     const res = await this.fetchImpl(`${this.baseUrl}/add?${params}`, {
       method: "POST",
@@ -140,16 +171,8 @@ export class ClusterClient {
    * replication factor. Preserves the CID — used to migrate a pinset off
    * another pinning service without re-hashing.
    */
-  async pinByCid(
-    cid: string,
-    opts: { replicationMin?: number; replicationMax?: number } = {},
-  ): Promise<void> {
-    const params = new URLSearchParams();
-    if (opts.replicationMin !== undefined)
-      params.set("replication-min", String(opts.replicationMin));
-    if (opts.replicationMax !== undefined)
-      params.set("replication-max", String(opts.replicationMax));
-    const qs = params.toString();
+  async pinByCid(cid: string, opts: PinOptions = {}): Promise<void> {
+    const qs = pinParams(opts).toString();
 
     const res = await this.fetchImpl(
       `${this.baseUrl}/pins/${cid}${qs ? `?${qs}` : ""}`,
@@ -197,6 +220,14 @@ export class ClusterClient {
         : [],
       replicationFactorMin: Number(p.replication_factor_min ?? -1),
       replicationFactorMax: Number(p.replication_factor_max ?? -1),
+      metadata:
+        p.metadata && typeof p.metadata === "object"
+          ? Object.fromEntries(
+              Object.entries(p.metadata as Record<string, unknown>).map(
+                ([k, v]) => [k, String(v)],
+              ),
+            )
+          : {},
     }));
   }
 

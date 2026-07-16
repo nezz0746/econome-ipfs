@@ -2,6 +2,7 @@ import { getDb, onboardingTokens } from "@repo/db";
 import { desc } from "drizzle-orm";
 import { CopyButton } from "@/components/copy-button";
 import { PageHeader } from "@/components/page-header";
+import { TagBadges } from "@/components/tag-badges";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +37,7 @@ export default async function OnboardingPage() {
     .select({
       id: onboardingTokens.id,
       label: onboardingTokens.label,
+      tags: onboardingTokens.tags,
       token: onboardingTokens.token,
       usedByPeerId: onboardingTokens.usedByPeerId,
       createdAt: onboardingTokens.createdAt,
@@ -122,8 +124,17 @@ export default async function OnboardingPage() {
               <Label htmlFor="label">Participant label</Label>
               <Input id="label" name="label" placeholder="e.g. partner-acme" />
             </div>
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="tags">Tag subscriptions (optional)</Label>
+              <Input id="tags" name="tags" placeholder="e.g. photos,archive" />
+            </div>
             <Button type="submit">Mint token</Button>
           </form>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Every participant replicates the untagged base pinset. Tags opt them
+            into tagged collections on top; the participant can override with{" "}
+            <code className="font-mono">econome join --tags …</code>.
+          </p>
         </CardContent>
       </Card>
 
@@ -138,6 +149,7 @@ export default async function OnboardingPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Label</TableHead>
+                  <TableHead>Tags</TableHead>
                   <TableHead>Join command</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Created</TableHead>
@@ -148,6 +160,9 @@ export default async function OnboardingPage() {
                   <TableRow key={token.id}>
                     <TableCell className="font-medium">
                       {token.label ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      <TagBadges tags={token.tags} emptyLabel="base pinset" />
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">

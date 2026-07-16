@@ -9,6 +9,7 @@ import type { ClusterClient } from "../src/cluster-client";
 
 function fakeCluster(overrides: Partial<ClusterClient> = {}): ClusterClient {
   return {
+    id: vi.fn(async () => "peer-a"),
     add: vi.fn(async () => ({ name: "f.txt", cid: "bafycid", size: 11 })),
     peers: vi.fn(async () => [
       { id: "peer-a", peername: "main", addresses: [], error: undefined },
@@ -21,6 +22,7 @@ function fakeCluster(overrides: Partial<ClusterClient> = {}): ClusterClient {
         allocations: ["peer-a"],
         replicationFactorMin: 2,
         replicationFactorMax: 3,
+        metadata: {},
       },
     ]),
     healthGraph: vi.fn(async () => ({
@@ -56,6 +58,10 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
       hashed === hashApiKey("k") ? { id: "key-1" } : undefined,
     recordUpload: vi.fn(async () => {}),
     forgetUpload: vi.fn(async () => {}),
+    listTagSubscriptions: vi.fn(async () => [
+      { peerId: "peer-b", subscribedTags: ["photos"] },
+      { peerId: "peer-c", subscribedTags: ["videos"] },
+    ]),
     peerService: {
       enrichedPeers: async () => ({ peers: [], locationsUpdatedAt: null }),
       peerDetail: async () => null,
@@ -95,13 +101,56 @@ describe("POST /ingest", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ cid: "bafycid" });
+    expect(await res.json()).toMatchObject({ cid: "bafycid", tags: [] });
     expect(recordUpload).toHaveBeenCalledWith({
       cid: "bafycid",
       name: "f.txt",
       size: 11,
+      tags: [],
       apiKeyId: "key-1",
     });
+  });
+
+  it("pins tagged content to the main peer + subscribers only", async () => {
+    const cluster = fakeCluster();
+    const recordUpload = vi.fn(async () => {});
+    const app = createApp(makeDeps({ cluster, recordUpload }));
+
+    const form = new FormData();
+    form.append("file", new File(["hello world"], "f.txt"));
+    form.append("tags", "Photos, archive");
+    const res = await app.request("/ingest", {
+      method: "POST",
+      headers: { "x-api-key": "k" },
+      body: form,
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ tags: ["photos", "archive"] });
+    // peer-b subscribes to "photos"; peer-c ("videos") is excluded.
+    expect(cluster.add).toHaveBeenCalledWith(expect.any(FormData), {
+      replicationMin: 1,
+      replicationMax: 2,
+      userAllocations: ["peer-a", "peer-b"],
+      metadata: { tags: "photos,archive" },
+    });
+    expect(recordUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ tags: ["photos", "archive"] }),
+    );
+  });
+
+  it("rejects invalid tags", async () => {
+    const cluster = fakeCluster();
+    const form = new FormData();
+    form.append("file", new File(["x"], "f.txt"));
+    form.append("tags", "Not A Slug!");
+    const res = await createApp(makeDeps({ cluster })).request("/ingest", {
+      method: "POST",
+      headers: { "x-api-key": "k" },
+      body: form,
+    });
+    expect(res.status).toBe(400);
+    expect(cluster.add).not.toHaveBeenCalled();
   });
 });
 
@@ -164,6 +213,22 @@ describe("POST /ingest/pin", () => {
     expect(cluster.pinByCid).toHaveBeenCalledWith("bafyc2", {
       replicationMin: 2,
       replicationMax: 3,
+    });
+  });
+
+  it("pins a tagged batch with explicit allocations", async () => {
+    const cluster = fakeCluster();
+    const res = await createApp(makeDeps({ cluster })).request("/ingest/pin", {
+      method: "POST",
+      headers: { "x-api-key": "k", "content-type": "application/json" },
+      body: JSON.stringify({ cids: ["bafyc1"], tags: ["videos"] }),
+    });
+    expect(res.status).toBe(200);
+    expect(cluster.pinByCid).toHaveBeenCalledWith("bafyc1", {
+      replicationMin: 1,
+      replicationMax: 2,
+      userAllocations: ["peer-a", "peer-c"],
+      metadata: { tags: "videos" },
     });
   });
 
@@ -243,12 +308,14 @@ describe("POST /ingest/record", () => {
       cid: "bafy1",
       name: "a.json",
       size: 10,
+      tags: [],
       apiKeyId: "key-1",
     });
     expect(recordUpload).toHaveBeenCalledWith({
       cid: "bafy2",
       name: null,
       size: 20,
+      tags: [],
       apiKeyId: "key-1",
     });
   });
@@ -316,6 +383,7 @@ describe("POST /ingest/import", () => {
       cid: "bafy1",
       name: null,
       size: 10,
+      tags: [],
       apiKeyId: "key-1",
     });
   });

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { PeerStatus } from "@/components/peer-status";
 import { RefreshLocationsButton } from "@/components/refresh-locations-button";
+import { TagBadges } from "@/components/tag-badges";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -66,6 +67,7 @@ export default async function PeersPage() {
                   <TableHead>Peer</TableHead>
                   <TableHead>Location</TableHead>
                   <TableHead>IP</TableHead>
+                  <TableHead>Tags</TableHead>
                   <TableHead className="text-right">Data held</TableHead>
                   <TableHead className="text-right">Files</TableHead>
                   <TableHead className="text-right">Status</TableHead>
@@ -92,6 +94,9 @@ export default async function PeersPage() {
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {peer.publicIp ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      <TagBadges tags={peer.subscribedTags} />
                     </TableCell>
                     <TableCell className="text-right">
                       {formatBytes(peer.bytesHeld)}

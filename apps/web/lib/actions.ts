@@ -8,11 +8,13 @@ import {
   getDb,
   hashApiKey,
   onboardingTokens,
+  participants,
 } from "@repo/db";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getEnrichedPeers, ingest } from "@/lib/api";
 import { auth } from "@/lib/auth";
+import { parseTags } from "@/lib/tags";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/upload-config";
 
 async function requireUserId(): Promise<string> {
@@ -67,15 +69,42 @@ export async function refreshPeerLocations(): Promise<void> {
 export async function createOnboardingToken(formData: FormData): Promise<void> {
   const userId = await requireUserId();
   const label = String(formData.get("label") ?? "").trim() || null;
-  await getDb()
-    .insert(onboardingTokens)
-    .values({ token: generateOnboardingToken(), label, createdBy: userId });
+  // Default tag subscriptions for the joining peer (CLI --tags overrides).
+  const tags = parseTags(formData.get("tags")) ?? [];
+  await getDb().insert(onboardingTokens).values({
+    token: generateOnboardingToken(),
+    label,
+    tags,
+    createdBy: userId,
+  });
   revalidatePath("/dashboard/onboarding");
+}
+
+/**
+ * Update a participant's replication-tag subscriptions. The API's
+ * reallocation job converges tagged pins onto the new subscriber set on its
+ * next accounting tick.
+ */
+export async function updateParticipantTags(formData: FormData): Promise<void> {
+  await requireUserId();
+  const peerId = String(formData.get("peerId") ?? "");
+  if (!peerId) throw new Error("peerId is required");
+  const tags = parseTags(formData.get("tags"));
+  if (tags === null) {
+    throw new Error("invalid tags: comma-separated lowercase slugs expected");
+  }
+  await getDb()
+    .update(participants)
+    .set({ subscribedTags: tags })
+    .where(eq(participants.peerId, peerId));
+  revalidatePath(`/dashboard/peers/${encodeURIComponent(peerId)}`);
+  revalidatePath("/dashboard/peers");
 }
 
 export interface UploadResult {
   name: string;
   cid?: string;
+  tags?: string[];
   error?: string;
 }
 
@@ -96,9 +125,13 @@ export async function testUpload(formData: FormData): Promise<UploadResult> {
   if (file.size > MAX_UPLOAD_BYTES) {
     return { name, error: `Too large (max ${MAX_UPLOAD_MB} MB)` };
   }
+  const tags = parseTags(formData.get("tags"));
+  if (tags === null) {
+    return { name, error: "Invalid tags (use lowercase slugs, e.g. photos)" };
+  }
   try {
-    const result = await ingest(apiKey, file);
-    return { name, cid: result.cid };
+    const result = await ingest(apiKey, file, tags);
+    return { name, cid: result.cid, tags: result.tags };
   } catch (err) {
     return {
       name,

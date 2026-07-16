@@ -18,6 +18,7 @@ import { ClusterClient } from "./cluster-client";
 import { loadConfig } from "./config";
 import { createPeerService } from "./peer-service";
 import { resolveSizes } from "./pin-size";
+import { runReallocationJob } from "./reallocation";
 
 const config = loadConfig();
 const db = getDb();
@@ -105,6 +106,7 @@ const peerService = createPeerService({
       .select({
         peerId: participants.peerId,
         label: participants.label,
+        subscribedTags: participants.subscribedTags,
         firstSeenAt: participants.firstSeenAt,
         lastSeenAt: participants.lastSeenAt,
       })
@@ -155,6 +157,15 @@ const peerService = createPeerService({
   },
 });
 
+async function listTagSubscriptions() {
+  return db
+    .select({
+      peerId: participants.peerId,
+      subscribedTags: participants.subscribedTags,
+    })
+    .from(participants);
+}
+
 const app = createApp({
   cluster,
   peerService,
@@ -182,12 +193,14 @@ const app = createApp({
       cid: upload.cid,
       name: upload.name,
       size: upload.size,
+      tags: upload.tags,
       apiKeyId: upload.apiKeyId,
     });
   },
   async forgetUpload(cid: string) {
     await db.delete(uploads).where(eq(uploads.cid, cid));
   },
+  listTagSubscriptions,
 });
 
 async function saveSnapshots(
@@ -230,7 +243,7 @@ async function main() {
 
   if (config.accountingIntervalMs) {
     const interval = config.accountingIntervalMs;
-    const tick = () =>
+    const tick = () => {
       runAccountingJob({
         cluster,
         saveSnapshots,
@@ -243,6 +256,14 @@ async function main() {
             ipfsApiUrl: config.ipfsApiUrl,
           }),
       }).catch((err) => console.error("[accounting] job failed:", err));
+      // Converge tagged pins on their subscribed peers (new subscribers,
+      // unsubscribes, peers that were offline at pin time).
+      runReallocationJob({ cluster, listTagSubscriptions })
+        .then((n) => {
+          if (n > 0) console.log(`[reallocation] re-pinned ${n} tagged CID(s)`);
+        })
+        .catch((err) => console.error("[reallocation] job failed:", err));
+    };
     setInterval(tick, interval);
     console.log(`[accounting] enabled, every ${interval}ms`);
   }

@@ -151,6 +151,55 @@ describe("ClusterClient", () => {
     expect(calls[0]?.[1]).toMatchObject({ method: "POST" });
   });
 
+  it("pinByCid encodes user allocations and metadata (tagged pins)", async () => {
+    const fetchImpl = mockFetch({ "/pins/": { status: 200, body: "{}" } });
+    const client = new ClusterClient("http://cluster:9094", fetchImpl);
+
+    await client.pinByCid("bafyc1", {
+      replicationMin: 1,
+      replicationMax: 2,
+      userAllocations: ["peer-a", "peer-b"],
+      name: "one",
+      metadata: { tags: "photos,archive" },
+    });
+
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const url = new URL(String(calls[0]?.[0]));
+    expect(url.searchParams.get("user-allocations")).toBe("peer-a,peer-b");
+    expect(url.searchParams.get("meta-tags")).toBe("photos,archive");
+    expect(url.searchParams.get("name")).toBe("one");
+  });
+
+  it("GET /id returns the peer id", async () => {
+    const fetchImpl = mockFetch({
+      "/id": { body: JSON.stringify({ id: "peer-main" }) },
+    });
+    const client = new ClusterClient("http://cluster:9094", fetchImpl);
+    await expect(client.id()).resolves.toBe("peer-main");
+  });
+
+  it("parses pin metadata on /pins listings", async () => {
+    const fetchImpl = mockFetch({
+      "/pins": {
+        body: JSON.stringify({
+          cid: { "/": "bafyc1" },
+          name: "one",
+          allocations: ["peer-a"],
+          replication_factor_min: 1,
+          replication_factor_max: 2,
+          metadata: { tags: "photos" },
+        }),
+      },
+    });
+    const client = new ClusterClient("http://cluster:9094", fetchImpl);
+    const pins = await client.pins();
+    expect(pins[0]).toMatchObject({
+      cid: "bafyc1",
+      allocations: ["peer-a"],
+      metadata: { tags: "photos" },
+    });
+  });
+
   it("pinByCid throws on a non-ok response", async () => {
     const fetchImpl = mockFetch({ "/pins/": { status: 500, body: "boom" } });
     const client = new ClusterClient("http://cluster:9094", fetchImpl);

@@ -32,6 +32,8 @@ export interface Pin {
   allocations: string[];
   replicationFactorMin: number;
   replicationFactorMax: number;
+  /** Pin metadata; tagged pins carry their tags under the `tags` key. */
+  metadata: Record<string, string>;
 }
 
 async function gatewayFetch<T>(path: string): Promise<T> {
@@ -75,9 +77,11 @@ export function getPins(): Promise<Pin[]> {
 export async function ingest(
   apiKey: string,
   file: File,
-): Promise<{ cid: string; name: string; size: number }> {
+  tags: string[] = [],
+): Promise<{ cid: string; name: string; size: number; tags: string[] }> {
   const form = new FormData();
   form.append("file", file, file.name);
+  if (tags.length > 0) form.append("tags", tags.join(","));
   const res = await fetch(`${HONO_URL}/ingest`, {
     method: "POST",
     headers: { "x-api-key": apiKey },
@@ -86,7 +90,12 @@ export async function ingest(
   if (!res.ok) {
     throw new Error(`Ingest failed: ${res.status} ${await res.text()}`);
   }
-  return res.json() as Promise<{ cid: string; name: string; size: number }>;
+  return res.json() as Promise<{
+    cid: string;
+    name: string;
+    size: number;
+    tags: string[];
+  }>;
 }
 
 export interface Geo {
@@ -108,6 +117,8 @@ export interface EnrichedPeer {
   geo: Geo | null;
   bytesHeld: number;
   fileCount: number;
+  /** Tag subscriptions (known participants only; empty = base pinset only). */
+  subscribedTags: string[];
   firstSeenAt: string | null;
   lastSeenAt: string | null;
   /** ISO timestamp of when the current online session began (online peers). */
