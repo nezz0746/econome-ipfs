@@ -3,7 +3,7 @@ import type {
   Adapter,
   CollectionOptions,
 } from "@payloadcms/plugin-cloud-storage/types";
-import type { Config, Plugin } from "payload";
+import type { Config, FileData, Plugin } from "payload";
 
 export interface IpfsStorageOptions {
   /** Base URL of the storage-center API (the Hono service), e.g. https://api.example.com */
@@ -82,7 +82,16 @@ function ipfsAdapter(options: IpfsStorageOptions): Adapter {
       }
       const json = (await res.json()) as IngestResponse;
       if (!json.cid) throw new Error("IPFS ingest returned no CID");
+      // Persist the CID via BOTH mechanisms so we work across the `^3.0.0`
+      // peer range: older plugin-cloud-storage ran handleUpload in a
+      // `beforeChange` hook and read back the mutated `data`; newer versions
+      // (>=3.85) run it in `afterChange` on an already-saved doc and persist
+      // ONLY the returned metadata via a follow-up `payload.update`. Mutating
+      // `data` alone is a no-op there, so the CID never lands — return it too.
       (data as Record<string, unknown>).cid = json.cid;
+      // `cid` is a custom field we register below; the plugin's FileData type
+      // doesn't model it, so cast to satisfy HandleUpload's return type.
+      return { cid: json.cid } as Partial<FileData>;
     },
 
     async handleDelete({ doc }) {
