@@ -19,8 +19,9 @@ export function initials(name: string, fallbackId = ""): string {
   const source = name.trim() || fallbackId;
   if (!source) return "?";
   const words = source.split(/[\s._-]+/).filter(Boolean);
-  if (words.length >= 2) {
-    return (words[0][0] + words[1][0]).toUpperCase();
+  const [first, second] = words;
+  if (first && second) {
+    return (first.charAt(0) + second.charAt(0)).toUpperCase();
   }
   return source.slice(0, 2).toUpperCase();
 }

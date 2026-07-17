@@ -73,7 +73,7 @@ describe("groupByLocation", () => {
     ]);
     expect(unlocated).toHaveLength(0);
     expect(groups).toHaveLength(1);
-    expect(groups[0].peers.map((p) => p.id)).toEqual(["a", "b"]);
+    expect(groups[0]?.peers.map((p) => p.id)).toEqual(["a", "b"]);
   });
 
   it("separates distinct locations and collects peers without geo", () => {
