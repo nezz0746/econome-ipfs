@@ -48,9 +48,9 @@ export function PeersMap({ peers }: { peers: EnrichedPeer[] }) {
           role="img"
           aria-label="Map of cluster peers and participants"
         >
-          {world.countryPaths.map((d, i) => (
+          {world.countryPaths.map((d) => (
             <path
-              key={i}
+              key={d}
               d={d}
               className="fill-muted/40 stroke-border"
               strokeWidth={0.4}
@@ -117,6 +117,7 @@ function Pin({
   const single = count === 1;
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: SVG <g> is the interactive pin — it has role, tabIndex, and keyboard/click handlers
     <g
       transform={`translate(${x}, ${y})`}
       tabIndex={0}
