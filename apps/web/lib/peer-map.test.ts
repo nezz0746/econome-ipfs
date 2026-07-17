@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { EnrichedPeer } from "@/lib/api";
-import { groupByLocation, initials, tagColor } from "@/lib/peer-map";
+import {
+  createWorldMap,
+  groupByLocation,
+  initials,
+  tagColor,
+} from "@/lib/peer-map";
 
 describe("tagColor", () => {
   it("is deterministic for the same tag", () => {
@@ -79,5 +84,24 @@ describe("groupByLocation", () => {
     ]);
     expect(groups).toHaveLength(2);
     expect(unlocated.map((p) => p.id)).toEqual(["c"]);
+  });
+});
+
+describe("createWorldMap", () => {
+  const map = createWorldMap(800, 400);
+
+  it("produces country outline paths", () => {
+    expect(map.countryPaths.length).toBeGreaterThan(50);
+    expect(map.countryPaths[0]).toMatch(/^M/);
+  });
+
+  it("projects London north-west of Sydney", () => {
+    const london = map.project(-0.13, 51.5);
+    const sydney = map.project(151.2, -33.9);
+    expect(london).not.toBeNull();
+    expect(sydney).not.toBeNull();
+    // Smaller x = further west; smaller y = further north.
+    expect(london![0]).toBeLessThan(sydney![0]);
+    expect(london![1]).toBeLessThan(sydney![1]);
   });
 });

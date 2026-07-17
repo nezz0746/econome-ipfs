@@ -1,3 +1,7 @@
+import { geoEqualEarth, geoPath } from "d3-geo";
+import { feature } from "topojson-client";
+// world-atlas ships a bundled TopoJSON of country borders (~100 KB). No network.
+import worldData from "world-atlas/countries-110m.json";
 import type { EnrichedPeer } from "@/lib/api";
 
 /** Deterministic HSL color derived from a tag string (stable across renders). */
@@ -58,4 +62,43 @@ export function groupByLocation(peers: EnrichedPeer[]): GroupedPeers {
     }
   }
   return { groups: [...byKey.values()], unlocated };
+}
+
+export interface WorldMap {
+  width: number;
+  height: number;
+  countryPaths: string[];
+  project(lon: number, lat: number): [number, number] | null;
+}
+
+/**
+ * Build a self-contained equal-area world map: SVG country outline `d` strings
+ * plus a projector from [lon, lat] to [x, y] within the given viewBox.
+ */
+export function createWorldMap(width: number, height: number): WorldMap {
+  // world-atlas JSON has no bundled topojson types; cast through `never` for the
+  // feature() call, then treat the result as GeoJSON.
+  const topology = worldData as unknown as {
+    objects: { countries: never };
+  };
+  const land = feature(
+    worldData as never,
+    topology.objects.countries,
+  ) as unknown as GeoJSON.FeatureCollection;
+
+  const projection = geoEqualEarth().fitSize([width, height], land as never);
+  const path = geoPath(projection);
+  const countryPaths = land.features
+    .map((f) => path(f as never))
+    .filter((d): d is string => d != null);
+
+  return {
+    width,
+    height,
+    countryPaths,
+    project(lon, lat) {
+      const point = projection([lon, lat]);
+      return point ? [point[0], point[1]] : null;
+    },
+  };
 }
