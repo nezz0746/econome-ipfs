@@ -1,5 +1,14 @@
 # @leconome/payload-storage-ipfs
 
+## 0.3.0
+
+### Minor Changes
+
+- Optional `tags` option: replication tags applied to every upload (sent as a
+  comma-separated `tags` field on `/ingest`). Tagged content is replicated only
+  by the main node and cluster participants subscribed to one of the tags;
+  omitting the option keeps full replication. Backward compatible.
+
 ## 0.2.0
 
 ### Minor Changes

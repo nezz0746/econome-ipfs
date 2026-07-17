@@ -56,12 +56,14 @@ from `‹gatewayUrl›/ipfs/‹cid›`.
 | `apiKey` | `string` | Sent as the `x-api-key` header on every request. |
 | `gatewayUrl` | `string` | IPFS gateway used to build URLs and serve content. |
 | `collections` | `Record<string, true \| CollectionOptions>` | Upload collections to route to IPFS. |
+| `tags` | `string[]` | Optional replication tags applied to every upload. Tagged content is replicated only by the main node and cluster participants subscribed to one of the tags; omit for full replication. |
 | `enabled` | `boolean` | Set `false` to disable (e.g. in local dev). |
 
 ## How it works
 
-- **Upload** → `POST {apiUrl}/ingest` (multipart field `file`, header
-  `x-api-key`) → expects `{ "cid": "…" }`. The CID is stored on the doc.
+- **Upload** → `POST {apiUrl}/ingest` (multipart field `file`, plus a
+  comma-separated `tags` field when configured, header `x-api-key`) → expects
+  `{ "cid": "…" }`. The CID is stored on the doc.
 - **URL** → `generateURL` returns `{gatewayUrl}/ipfs/{cid}`.
 - **Serve** → `staticHandler` looks up the doc by filename and streams the
   bytes from the gateway (cached, immutable).
