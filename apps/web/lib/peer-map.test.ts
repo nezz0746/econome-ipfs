@@ -100,8 +100,9 @@ describe("createWorldMap", () => {
     const sydney = map.project(151.2, -33.9);
     expect(london).not.toBeNull();
     expect(sydney).not.toBeNull();
+    if (!london || !sydney) throw new Error("projection returned null");
     // Smaller x = further west; smaller y = further north.
-    expect(london![0]).toBeLessThan(sydney![0]);
-    expect(london![1]).toBeLessThan(sydney![1]);
+    expect(london[0]).toBeLessThan(sydney[0]);
+    expect(london[1]).toBeLessThan(sydney[1]);
   });
 });
