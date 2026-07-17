@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EnrichedPeer } from "@/lib/api";
 import { formatBytes, timeAgo } from "@/lib/format";
 import {
@@ -27,6 +27,34 @@ export function PeersMap({ peers }: { peers: EnrichedPeer[] }) {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const router = useRouter();
 
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const activate = useCallback((key: string) => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setActiveKey(key);
+  }, []);
+
+  const scheduleClose = useCallback((key: string) => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => {
+      setActiveKey((k) => (k === key ? null : k));
+      closeTimer.current = null;
+    }, 150);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    },
+    [],
+  );
+
+  // Groups whose coordinates don't project (never for valid lat/lon under
+  // geoEqualEarth) are dropped here; geo-less peers already surface in the
+  // unlocated list below.
   const placed = useMemo<Placed[]>(() => {
     const result: Placed[] = [];
     for (const group of groups) {
@@ -42,10 +70,11 @@ export function PeersMap({ peers }: { peers: EnrichedPeer[] }) {
     <div className="space-y-3">
       <Legend />
       <div className="relative w-full overflow-hidden rounded-lg border bg-card">
+        {/* biome-ignore lint/a11y/useSemanticElements: SVG map landmark grouping interactive pins — <fieldset> isn't applicable here */}
         <svg
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           className="h-auto w-full"
-          role="img"
+          role="group"
           aria-label="Map of cluster peers and participants"
         >
           {world.countryPaths.map((d) => (
@@ -63,10 +92,8 @@ export function PeersMap({ peers }: { peers: EnrichedPeer[] }) {
               x={x}
               y={y}
               active={group.key === activeKey}
-              onActivate={() => setActiveKey(group.key)}
-              onDeactivate={() =>
-                setActiveKey((k) => (k === group.key ? null : k))
-              }
+              onActivate={() => activate(group.key)}
+              onDeactivate={() => scheduleClose(group.key)}
               onOpen={() => {
                 if (group.peers.length === 1) {
                   const only = group.peers[0];
@@ -85,6 +112,8 @@ export function PeersMap({ peers }: { peers: EnrichedPeer[] }) {
             group={active.group}
             leftPct={(active.x / WIDTH) * 100}
             topPct={(active.y / HEIGHT) * 100}
+            onMouseEnter={() => activate(active.group.key)}
+            onMouseLeave={() => scheduleClose(active.group.key)}
           />
         )}
       </div>
@@ -226,14 +255,21 @@ function PinCard({
   group,
   leftPct,
   topPct,
+  onMouseEnter,
+  onMouseLeave,
 }: {
   group: LocatedGroup;
   leftPct: number;
   topPct: number;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }) {
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: hover bridge so the card stays reachable
     <div
-      className="pointer-events-none absolute z-10 w-56 -translate-x-1/2 -translate-y-full rounded-lg border bg-popover p-3 text-popover-foreground shadow-md"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      className="pointer-events-auto absolute z-10 w-56 -translate-x-1/2 -translate-y-full rounded-lg border bg-popover p-3 text-popover-foreground shadow-md"
       style={{ left: `${leftPct}%`, top: `calc(${topPct}% - 12px)` }}
     >
       <p className="mb-1 text-xs font-medium text-muted-foreground">
