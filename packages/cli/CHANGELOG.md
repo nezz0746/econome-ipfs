@@ -1,5 +1,20 @@
 # @leconome/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- 20aeef8: Tag-based partial replication support.
+
+  - `@leconome/payload-storage-ipfs`: new optional `tags` option — replication
+    tags applied to every upload (sent as a comma-separated `tags` field on
+    `/ingest`). Tagged content is replicated only by the main node and cluster
+    participants subscribed to one of the tags; omitting the option keeps full
+    replication. Backward compatible.
+  - `@leconome/cli`: `econome join --tags a,b` subscribes the follower to
+    replication tags at registration; omit to use the defaults set on the
+    onboarding token.
+
 ## 0.2.2
 
 ### Patch Changes
