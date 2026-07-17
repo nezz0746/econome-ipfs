@@ -43,6 +43,11 @@ services:
       CLUSTER_IPFSHTTP_NODEMULTIADDRESS: /dns4/kubo/tcp/5001
       CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS: /ip4/0.0.0.0/tcp/9094
       CLUSTER_CRDT_TRUSTEDPEERS: ${CLUSTER_TRUSTED_PEERS:-*}
+      # Announce the host's public multiaddr (e.g. /ip4/<public-ip>/tcp/9096).
+      # In Docker the inferred addresses are container-internal, which leaves
+      # peers without a public IP — and the dashboard without geo locations.
+      # Empty keeps the inferred-addresses default.
+      CLUSTER_ANNOUNCEMULTIADDRESS: ${CLUSTER_ANNOUNCE:-}
     volumes:
       - cluster-data:/data/ipfs-cluster
     ports:
