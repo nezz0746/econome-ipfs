@@ -1,5 +1,5 @@
-import { getDb, uploads } from "@repo/db";
-import { count, desc, sql } from "drizzle-orm";
+import { apiKeys, getDb, uploads } from "@repo/db";
+import { count, desc, eq, sql } from "drizzle-orm";
 import { ExternalLink } from "lucide-react";
 
 import { CopyButton } from "@/components/copy-button";
@@ -58,10 +58,14 @@ function selectPage(
       name: uploads.name,
       size: uploads.size,
       tags: uploads.tags,
+      // The API key that ingested the file — its label identifies the origin
+      // client (one key per client: CMS, app, migration script, …).
+      source: apiKeys.label,
       createdAt: uploads.createdAt,
       total: sql<number>`count(*) over()`.mapWith(Number),
     })
     .from(uploads)
+    .leftJoin(apiKeys, eq(uploads.apiKeyId, apiKeys.id))
     .orderBy(desc(uploads.createdAt))
     .limit(limit)
     .offset(offset);
@@ -134,6 +138,7 @@ export default async function FilesPage({
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>CID</TableHead>
+                    <TableHead>Source</TableHead>
                     <TableHead>Tags</TableHead>
                     <TableHead>Size</TableHead>
                     <TableHead>Added</TableHead>
@@ -153,6 +158,9 @@ export default async function FilesPage({
                           </code>
                           <CopyButton value={file.cid} label="CID copied" />
                         </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {file.source ?? "—"}
                       </TableCell>
                       <TableCell>
                         <TagBadges tags={file.tags} />
