@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import { ContributionChart } from "@/components/contribution-chart";
 import { PageHeader } from "@/components/page-header";
+import { PeerFilesTable } from "@/components/peer-files-table";
 import { TagBadges } from "@/components/tag-badges";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,14 +13,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { updateParticipantTags } from "@/lib/actions";
 import { getPeerDetail } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
@@ -132,49 +124,7 @@ export default async function PeerDetailPage({
               No files allocated to this peer yet.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>CID</TableHead>
-                  <TableHead className="text-right">Size</TableHead>
-                  <TableHead>Synced</TableHead>
-                  <TableHead className="text-right">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {peer.files.map((f) => (
-                  <TableRow key={f.cid}>
-                    <TableCell className="font-medium">
-                      {f.name || "—"}
-                    </TableCell>
-                    <TableCell className="max-w-55 truncate font-mono text-xs">
-                      {f.cid}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {f.size != null ? formatBytes(f.size) : "—"}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {f.syncedAt
-                        ? new Date(f.syncedAt)
-                            .toISOString()
-                            .slice(0, 16)
-                            .replace("T", " ")
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Badge
-                        variant={
-                          f.status === "pinned" ? "secondary" : "outline"
-                        }
-                      >
-                        {f.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <PeerFilesTable files={peer.files} />
           )}
         </CardContent>
       </Card>
