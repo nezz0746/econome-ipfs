@@ -104,9 +104,9 @@ export default function UploadPage() {
               <Label htmlFor="tags">Tags (optional)</Label>
               <Input id="tags" name="tags" placeholder="e.g. photos,archive" />
               <p className="text-xs text-muted-foreground">
-                Tagged content is replicated only by the main node and
-                participants subscribed to one of its tags. Untagged content is
-                replicated by everyone.
+                Tagged content is replicated by the main node and participants
+                subscribed to one of its tags. Untagged content stays on the
+                main node only.
               </p>
             </div>
             <Button type="submit" disabled={pending}>

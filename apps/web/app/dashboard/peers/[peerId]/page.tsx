@@ -42,7 +42,7 @@ export default async function PeerDetailPage({
         title={peer.peername || peer.id.slice(0, 16)}
         description={
           peer.online
-            ? "Online — replicating the company pinset."
+            ? "Online — replicating its subscribed collections."
             : "Currently unreachable."
         }
       />
@@ -83,18 +83,15 @@ export default async function PeerDetailPage({
         <CardHeader>
           <CardTitle className="text-base">Replication tags</CardTitle>
           <CardDescription>
-            This peer replicates the untagged base pinset, plus content tagged
-            with any of its subscriptions. Changes converge on the next
-            reallocation pass.
+            This peer replicates only content tagged with one of its
+            subscriptions — replication is opt-in. Changes converge on the next
+            reallocation pass (dropped subscriptions unpin).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted-foreground">Subscribed to</span>
-            <TagBadges
-              tags={peer.subscribedTags}
-              emptyLabel="base pinset only"
-            />
+            <TagBadges tags={peer.subscribedTags} emptyLabel="nothing yet" />
           </div>
           <form action={updateParticipantTags} className="flex items-end gap-3">
             <input type="hidden" name="peerId" value={peer.id} />
@@ -104,7 +101,7 @@ export default async function PeerDetailPage({
                 id="tags"
                 name="tags"
                 defaultValue={peer.subscribedTags.join(",")}
-                placeholder="e.g. photos,archive — empty for base pinset only"
+                placeholder="e.g. photos,archive — empty replicates nothing"
               />
             </div>
             <Button type="submit" variant="outline">

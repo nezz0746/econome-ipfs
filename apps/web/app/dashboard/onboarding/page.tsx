@@ -131,8 +131,9 @@ export default async function OnboardingPage() {
             <Button type="submit">Mint token</Button>
           </form>
           <p className="mt-2 text-xs text-muted-foreground">
-            Every participant replicates the untagged base pinset. Tags opt them
-            into tagged collections on top; the participant can override with{" "}
+            Replication is opt-in: a participant replicates only the tagged
+            collections it subscribes to (untagged content stays on the main
+            node). The participant can override with{" "}
             <code className="font-mono">econome join --tags …</code>.
           </p>
         </CardContent>
@@ -162,7 +163,7 @@ export default async function OnboardingPage() {
                       {token.label ?? "—"}
                     </TableCell>
                     <TableCell>
-                      <TagBadges tags={token.tags} emptyLabel="base pinset" />
+                      <TagBadges tags={token.tags} emptyLabel="none" />
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">

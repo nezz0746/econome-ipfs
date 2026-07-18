@@ -19,7 +19,6 @@ export interface Config {
   clusterApiUrl: string;
   ipfsApiUrl: string;
   internalToken: string;
-  replication: { min: number; max: number };
   accountingIntervalMs: number | null;
 }
 
@@ -29,10 +28,6 @@ export function loadConfig(): Config {
     clusterApiUrl: process.env.CLUSTER_API_URL ?? "http://localhost:9094",
     ipfsApiUrl: process.env.IPFS_API_URL ?? "http://localhost:5001",
     internalToken: requireInProd("INTERNAL_TOKEN", DEV_INTERNAL_TOKEN),
-    replication: {
-      min: Number(process.env.REPLICATION_MIN ?? -1),
-      max: Number(process.env.REPLICATION_MAX ?? -1),
-    },
     accountingIntervalMs: process.env.ACCOUNTING_INTERVAL_MS
       ? Number(process.env.ACCOUNTING_INTERVAL_MS)
       : null,

@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EnrichedPeer } from "@/lib/api";
-import {
-  createWorldMap,
-  groupByLocation,
-  initials,
-  tagColor,
-} from "@/lib/peer-map";
+import { boundsFor, groupByLocation, initials, tagColor } from "@/lib/peer-map";
 
 describe("tagColor", () => {
   it("is deterministic for the same tag", () => {
@@ -87,22 +82,30 @@ describe("groupByLocation", () => {
   });
 });
 
-describe("createWorldMap", () => {
-  const map = createWorldMap(800, 400);
-
-  it("produces country outline paths", () => {
-    expect(map.countryPaths.length).toBeGreaterThan(50);
-    expect(map.countryPaths[0]).toMatch(/^M/);
+describe("boundsFor", () => {
+  it("returns null when nothing is located", () => {
+    expect(boundsFor([])).toBeNull();
   });
 
-  it("projects London north-west of Sydney", () => {
-    const london = map.project(-0.13, 51.5);
-    const sydney = map.project(151.2, -33.9);
-    expect(london).not.toBeNull();
-    expect(sydney).not.toBeNull();
-    if (!london || !sydney) throw new Error("projection returned null");
-    // Smaller x = further west; smaller y = further north.
-    expect(london[0]).toBeLessThan(sydney[0]);
-    expect(london[1]).toBeLessThan(sydney[1]);
+  it("encloses all groups (Paris + London + Sydney)", () => {
+    const { groups } = groupByLocation([
+      makePeer({ id: "a", geo: geo(48.85, 2.35) }),
+      makePeer({ id: "b", geo: geo(51.5, -0.13) }),
+      makePeer({ id: "c", geo: geo(-33.9, 151.2) }),
+    ]);
+    expect(boundsFor(groups)).toEqual([
+      [-0.13, -33.9],
+      [151.2, 51.5],
+    ]);
+  });
+
+  it("degenerates to a point box for a single location", () => {
+    const { groups } = groupByLocation([
+      makePeer({ id: "a", geo: geo(48.85, 2.35) }),
+    ]);
+    expect(boundsFor(groups)).toEqual([
+      [2.35, 48.85],
+      [2.35, 48.85],
+    ]);
   });
 });

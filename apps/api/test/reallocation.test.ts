@@ -20,13 +20,13 @@ function fakeCluster(overrides: Partial<ClusterClient> = {}): ClusterClient {
         replicationFactorMax: 1,
         metadata: { tags: "photos" },
       },
-      // Untagged pin: never touched.
+      // Untagged pin already converged on the main peer: never touched.
       {
         cid: "c2",
         name: "two",
-        allocations: [],
-        replicationFactorMin: -1,
-        replicationFactorMax: -1,
+        allocations: ["main"],
+        replicationFactorMin: 1,
+        replicationFactorMax: 1,
         metadata: {},
       },
     ]),
@@ -52,6 +52,33 @@ describe("runReallocationJob", () => {
       userAllocations: ["main", "peer-b"],
       name: "one",
       metadata: { tags: "photos" },
+    });
+  });
+
+  it("converts legacy pin-everywhere pins to main-only (followers unpin)", async () => {
+    const cluster = fakeCluster({
+      pins: vi.fn(async () => [
+        {
+          cid: "legacy",
+          name: "old",
+          allocations: [],
+          replicationFactorMin: -1,
+          replicationFactorMax: -1,
+          metadata: {},
+        },
+      ]),
+    });
+    const repinned = await runReallocationJob({
+      cluster,
+      listTagSubscriptions: async () => [],
+    });
+    expect(repinned).toBe(1);
+    // No metadata: untagged pins carry no tags key.
+    expect(cluster.pinByCid).toHaveBeenCalledWith("legacy", {
+      replicationMin: 1,
+      replicationMax: 1,
+      userAllocations: ["main"],
+      name: "old",
     });
   });
 
