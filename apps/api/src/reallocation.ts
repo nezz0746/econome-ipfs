@@ -33,7 +33,9 @@ export async function runReallocationJob(
         replicationMax: action.allocations.length,
         userAllocations: action.allocations,
         name: action.name || undefined,
-        metadata: { [TAGS_META_KEY]: action.tags.join(",") },
+        ...(action.tags.length > 0 && {
+          metadata: { [TAGS_META_KEY]: action.tags.join(",") },
+        }),
       });
       repinned += 1;
     } catch (err) {

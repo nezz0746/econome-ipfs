@@ -3,8 +3,8 @@
 A company-operated **private collaborative IPFS cluster** plus the software to
 run it. Your company runs the trusted cluster peer; vetted **participants** help
 secure storage by running a follower (Kubo + `ipfs-cluster-follow`) that
-replicates your pinset. Content ingested through the main node is automatically
-pinned and replicated out to participants.
+replicates the tagged collections it subscribes to. Content ingested through
+the main node is pinned there and replicated out to subscribed participants.
 
 ## Architecture
 
@@ -25,16 +25,18 @@ pinned and replicated out to participants.
    PARTICIPANTS:  Kubo + ipfs-cluster-follow  ───────────┘
 ```
 
-### Partial replication (tags)
+### Opt-in replication (tags)
 
-By default every participant replicates the whole pinset (replication factor
--1). Content can optionally be **tagged** at ingest (`tags` field on `/ingest`,
-`/ingest/pin`, `/ingest/import`); tagged content is pinned only to the main
-peer plus participants **subscribed** to one of its tags (via explicit
-`user-allocations` on the cluster pin). Subscriptions are chosen at join time
-(`econome join --tags photos,videos`, or defaults set on the onboarding token)
-and editable per peer in the dashboard. A background reallocation job re-pins
-tagged CIDs whenever the subscriber set changes.
+Replication is **opt-in**: followers replicate nothing by default. Content is
+**tagged** at ingest (`tags` field on `/ingest`, `/ingest/pin`,
+`/ingest/import`) and pinned to the main peer plus participants **subscribed**
+to one of its tags (via explicit `user-allocations` on the cluster pin).
+Untagged content stays on the main peer only. Subscriptions are chosen at join
+time (`econome join --tags photos,videos`, or defaults set on the onboarding
+token) and editable per peer in the dashboard. A background reallocation job
+re-pins CIDs whenever the subscriber set changes — including converting legacy
+pin-everywhere (replication factor -1) pins, which makes existing followers
+unpin content they aren't subscribed to.
 
 - **`apps/web`** — Next 16 dashboard. Better Auth (multi-user), peer/follower
   monitoring, cluster health, participant onboarding, API-key management, and a

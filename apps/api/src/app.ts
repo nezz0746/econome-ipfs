@@ -33,7 +33,6 @@ export interface AppDeps {
   forgetUpload: (cid: string) => Promise<void>;
   /** Participants' tag subscriptions, to resolve tagged-pin allocations. */
   listTagSubscriptions: () => Promise<TagSubscription[]>;
-  replication: { min: number; max: number };
   /** kubo HTTP API base (e.g. http://kubo:5001), for CID-preserving CAR import. */
   ipfsApiUrl: string;
   /** Enriched peer views (files, geo, bytes, history) for the dashboard. */
@@ -90,28 +89,24 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
   };
 
   /**
-   * Pin options for the given tags. Untagged content keeps the env replication
-   * factor (default -1: everyone pins). Tagged content is allocated explicitly
+   * Pin options for the given tags. Replication is opt-in: untagged content
+   * is pinned to the main peer only; tagged content is allocated explicitly
    * to the main peer + subscribed participants, and carries its tags in pin
    * metadata so the reallocation job can reconcile it later.
    */
   async function pinOptionsForTags(tags: string[]): Promise<PinOptions> {
-    if (tags.length === 0) {
-      return {
-        replicationMin: deps.replication.min,
-        replicationMax: deps.replication.max,
-      };
-    }
-    const [main, subscriptions] = await Promise.all([
-      getMainPeerId(),
-      deps.listTagSubscriptions(),
-    ]);
-    const allocations = desiredAllocations(tags, main, subscriptions);
+    const main = await getMainPeerId();
+    const allocations =
+      tags.length === 0
+        ? [main]
+        : desiredAllocations(tags, main, await deps.listTagSubscriptions());
     return {
       replicationMin: 1,
       replicationMax: allocations.length,
       userAllocations: allocations,
-      metadata: { [TAGS_META_KEY]: tags.join(",") },
+      ...(tags.length > 0 && {
+        metadata: { [TAGS_META_KEY]: tags.join(",") },
+      }),
     };
   }
 

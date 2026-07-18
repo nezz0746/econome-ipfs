@@ -52,7 +52,6 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
   return {
     cluster: fakeCluster(),
     internalToken: "tok",
-    replication: { min: 2, max: 3 },
     ipfsApiUrl: "http://kubo:5001",
     findApiKey: async (hashed) =>
       hashed === hashApiKey("k") ? { id: "key-1" } : undefined,
@@ -88,9 +87,10 @@ describe("POST /ingest", () => {
     expect(cluster.add).not.toHaveBeenCalled();
   });
 
-  it("adds + records on a valid key", async () => {
+  it("adds + records on a valid key; untagged content pins to main only", async () => {
+    const cluster = fakeCluster();
     const recordUpload = vi.fn(async () => {});
-    const app = createApp(makeDeps({ recordUpload }));
+    const app = createApp(makeDeps({ cluster, recordUpload }));
 
     const form = new FormData();
     form.append("file", new File(["hello world"], "f.txt"));
@@ -102,6 +102,12 @@ describe("POST /ingest", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ cid: "bafycid", tags: [] });
+    // Replication is opt-in: untagged uploads are allocated to the main peer.
+    expect(cluster.add).toHaveBeenCalledWith(expect.any(FormData), {
+      replicationMin: 1,
+      replicationMax: 1,
+      userAllocations: ["peer-a"],
+    });
     expect(recordUpload).toHaveBeenCalledWith({
       cid: "bafycid",
       name: "f.txt",
@@ -190,7 +196,7 @@ describe("POST /ingest/pin", () => {
     expect(cluster.pinByCid).not.toHaveBeenCalled();
   });
 
-  it("pins each cid with the configured replication and returns per-cid results", async () => {
+  it("pins each cid to the main peer (opt-in replication) and returns per-cid results", async () => {
     const cluster = fakeCluster();
     const res = await createApp(makeDeps({ cluster })).request("/ingest/pin", {
       method: "POST",
@@ -207,12 +213,14 @@ describe("POST /ingest/pin", () => {
       ],
     });
     expect(cluster.pinByCid).toHaveBeenCalledWith("bafyc1", {
-      replicationMin: 2,
-      replicationMax: 3,
+      replicationMin: 1,
+      replicationMax: 1,
+      userAllocations: ["peer-a"],
     });
     expect(cluster.pinByCid).toHaveBeenCalledWith("bafyc2", {
-      replicationMin: 2,
-      replicationMax: 3,
+      replicationMin: 1,
+      replicationMax: 1,
+      userAllocations: ["peer-a"],
     });
   });
 
@@ -375,8 +383,9 @@ describe("POST /ingest/import", () => {
       ipfsApiUrl: "http://kubo:5001",
     });
     expect(cluster.pinByCid).toHaveBeenCalledWith("bafy1", {
-      replicationMin: 2,
-      replicationMax: 3,
+      replicationMin: 1,
+      replicationMax: 1,
+      userAllocations: ["peer-a"],
     });
     // importMock returns bytes: 10 → recorded as the upload size (real DAG size).
     expect(recordUpload).toHaveBeenCalledWith({
@@ -429,8 +438,9 @@ describe("POST /ingest/import", () => {
       error: "cid_mismatch (imported none)",
     });
     expect(cluster.pinByCid).toHaveBeenCalledWith("bafy1", {
-      replicationMin: 2,
-      replicationMax: 3,
+      replicationMin: 1,
+      replicationMax: 1,
+      userAllocations: ["peer-a"],
     });
     expect(cluster.pinByCid).not.toHaveBeenCalledWith("bad", expect.anything());
   });

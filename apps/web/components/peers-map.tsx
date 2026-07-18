@@ -1,12 +1,16 @@
 "use client";
 
+import "maplibre-gl/dist/maplibre-gl.css";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Map as MapGL, Marker, Popup } from "react-map-gl/maplibre";
 import type { EnrichedPeer } from "@/lib/api";
 import { formatBytes, timeAgo } from "@/lib/format";
 import {
-  createWorldMap,
+  boundsFor,
   groupByLocation,
   initials,
   type LocatedGroup,
@@ -14,16 +18,20 @@ import {
 } from "@/lib/peer-map";
 import { cn } from "@/lib/utils";
 
-const WIDTH = 800;
-const HEIGHT = 400;
 const ONLINE = "#22c55e"; // green-500
 const OFFLINE = "#94a3b8"; // slate-400
 
-type Placed = { group: LocatedGroup; x: number; y: number };
+// Free, token-less vector styles (CARTO basemaps; OSM data, attribution shown
+// by the map's attribution control).
+const STYLE_LIGHT =
+  "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const STYLE_DARK =
+  "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
 export function PeersMap({ peers }: { peers: EnrichedPeer[] }) {
-  const world = useMemo(() => createWorldMap(WIDTH, HEIGHT), []);
+  const { resolvedTheme } = useTheme();
   const { groups, unlocated } = useMemo(() => groupByLocation(peers), [peers]);
+  const bounds = useMemo(() => boundsFor(groups), [groups]);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const router = useRouter();
 
@@ -52,70 +60,72 @@ export function PeersMap({ peers }: { peers: EnrichedPeer[] }) {
     [],
   );
 
-  // Groups whose coordinates don't project (never for valid lat/lon under
-  // geoEqualEarth) are dropped here; geo-less peers already surface in the
-  // unlocated list below.
-  const placed = useMemo<Placed[]>(() => {
-    const result: Placed[] = [];
-    for (const group of groups) {
-      const point = world.project(group.lon, group.lat);
-      if (point) result.push({ group, x: point[0], y: point[1] });
-    }
-    return result;
-  }, [groups, world]);
+  const active = groups.find((g) => g.key === activeKey) ?? null;
 
-  const active = placed.find((p) => p.group.key === activeKey) ?? null;
+  // Fit the initial view to enclose every located participant; a lone pin
+  // gets a country-level zoom instead of a degenerate zero-area fit.
+  const initialViewState = bounds
+    ? {
+        bounds,
+        fitBoundsOptions: { padding: 96, maxZoom: 6 },
+      }
+    : { longitude: 0, latitude: 25, zoom: 1 };
 
   return (
     <div className="space-y-3">
       <Legend />
-      <div className="relative w-full overflow-hidden rounded-lg border bg-card">
-        {/* biome-ignore lint/a11y/useSemanticElements: SVG map landmark grouping interactive pins — <fieldset> isn't applicable here */}
-        <svg
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          className="h-auto w-full"
-          role="group"
-          aria-label="Map of cluster peers and participants"
+      <div className="h-[420px] w-full overflow-hidden rounded-lg border">
+        <MapGL
+          // Remount when the located set changes so the fitted bounds follow.
+          key={groups.map((g) => g.key).join("|") || "empty"}
+          initialViewState={initialViewState}
+          mapStyle={resolvedTheme === "dark" ? STYLE_DARK : STYLE_LIGHT}
+          style={{ width: "100%", height: "100%" }}
+          attributionControl={{ compact: true }}
         >
-          {world.countryPaths.map((d) => (
-            <path
-              key={d}
-              d={d}
-              className="fill-muted/40 stroke-border"
-              strokeWidth={0.4}
-            />
-          ))}
-          {placed.map(({ group, x, y }) => (
-            <Pin
+          {groups.map((group) => (
+            <Marker
               key={group.key}
-              group={group}
-              x={x}
-              y={y}
-              active={group.key === activeKey}
-              onActivate={() => activate(group.key)}
-              onDeactivate={() => scheduleClose(group.key)}
-              onOpen={() => {
-                if (group.peers.length === 1) {
-                  const only = group.peers[0];
+              longitude={group.lon}
+              latitude={group.lat}
+              anchor="center"
+            >
+              <Pin
+                group={group}
+                active={group.key === activeKey}
+                onActivate={() => activate(group.key)}
+                onDeactivate={() => scheduleClose(group.key)}
+                onOpen={() => {
+                  const only =
+                    group.peers.length === 1 ? group.peers[0] : undefined;
                   if (only) {
                     router.push(
                       `/dashboard/peers/${encodeURIComponent(only.id)}`,
                     );
                   }
-                }
-              }}
-            />
+                }}
+              />
+            </Marker>
           ))}
-        </svg>
-        {active && (
-          <PinCard
-            group={active.group}
-            leftPct={(active.x / WIDTH) * 100}
-            topPct={(active.y / HEIGHT) * 100}
-            onMouseEnter={() => activate(active.group.key)}
-            onMouseLeave={() => scheduleClose(active.group.key)}
-          />
-        )}
+          {active && (
+            <Popup
+              longitude={active.lon}
+              latitude={active.lat}
+              anchor="bottom"
+              offset={16}
+              closeButton={false}
+              closeOnClick={false}
+              className="peers-map-popup"
+              maxWidth="240px"
+            >
+              <PinCard
+                group={active}
+                onMouseEnter={() => activate(active.key)}
+                onMouseLeave={() => scheduleClose(active.key)}
+              />
+            </Popup>
+          )}
+        </MapGL>
       </div>
       {unlocated.length > 0 && <UnlocatedList peers={unlocated} />}
     </div>
@@ -124,16 +134,12 @@ export function PeersMap({ peers }: { peers: EnrichedPeer[] }) {
 
 function Pin({
   group,
-  x,
-  y,
   active,
   onActivate,
   onDeactivate,
   onOpen,
 }: {
   group: LocatedGroup;
-  x: number;
-  y: number;
   active: boolean;
   onActivate: () => void;
   onDeactivate: () => void;
@@ -146,91 +152,48 @@ function Pin({
   const single = count === 1;
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: SVG <g> is the interactive pin — it has role, tabIndex, and keyboard/click handlers
-    <g
-      transform={`translate(${x}, ${y})`}
-      tabIndex={0}
-      role={single ? "button" : "group"}
+    <button
+      type="button"
       aria-label={pinAriaLabel(group)}
-      className={cn("cursor-pointer outline-none", !online && "opacity-70")}
+      className={cn(
+        "relative block cursor-pointer outline-none",
+        !online && "opacity-70",
+        active && "z-10",
+      )}
       onMouseEnter={onActivate}
       onMouseLeave={onDeactivate}
       onFocus={onActivate}
       onBlur={onDeactivate}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
+      onClick={single ? onOpen : undefined}
     >
       {online && (
-        <circle
-          r={10}
-          fill={ONLINE}
-          opacity={0.35}
-          className="animate-ping motion-reduce:hidden"
+        <span
+          className="absolute inset-0 animate-ping rounded-full opacity-35 motion-reduce:hidden"
+          style={{ backgroundColor: ONLINE }}
         />
       )}
       {participant ? (
-        <>
-          <circle
-            r={9}
-            fill={tagColor(participant.subscribedTags[0] ?? "")}
-            stroke={ring}
-            strokeWidth={2}
-          />
-          <text
-            textAnchor="middle"
-            dy="0.32em"
-            fontSize={8}
-            fontWeight={600}
-            fill="#fff"
-            style={{ pointerEvents: "none" }}
-          >
-            {initials(participant.peername, participant.id)}
-          </text>
-        </>
+        <span
+          className="flex size-5 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+          style={{
+            backgroundColor: tagColor(participant.subscribedTags[0] ?? ""),
+            boxShadow: `0 0 0 2px ${ring}`,
+          }}
+        >
+          {initials(participant.peername, participant.id)}
+        </span>
       ) : (
-        <rect
-          x={-6}
-          y={-6}
-          width={12}
-          height={12}
-          transform="rotate(45)"
-          stroke={ring}
-          strokeWidth={2}
-          className="fill-muted-foreground"
+        <span
+          className="block size-3.5 rotate-45 bg-muted-foreground"
+          style={{ boxShadow: `0 0 0 2px ${ring}` }}
         />
       )}
       {count > 1 && (
-        <>
-          <circle cx={9} cy={-9} r={6} className="fill-foreground" />
-          <text
-            x={9}
-            y={-9}
-            textAnchor="middle"
-            dy="0.32em"
-            fontSize={7}
-            fontWeight={700}
-            className="fill-background"
-            style={{ pointerEvents: "none" }}
-          >
-            {count}
-          </text>
-        </>
+        <span className="absolute -top-2 -right-2 flex size-4 items-center justify-center rounded-full bg-foreground text-[9px] font-bold text-background">
+          {count}
+        </span>
       )}
-      {active && (
-        <circle
-          r={13}
-          fill="none"
-          stroke={ring}
-          strokeWidth={1}
-          opacity={0.6}
-        />
-      )}
-    </g>
+    </button>
   );
 }
 
@@ -253,14 +216,10 @@ function sinceLabel(peer: EnrichedPeer): string | null {
 
 function PinCard({
   group,
-  leftPct,
-  topPct,
   onMouseEnter,
   onMouseLeave,
 }: {
   group: LocatedGroup;
-  leftPct: number;
-  topPct: number;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }) {
@@ -269,13 +228,12 @@ function PinCard({
     <div
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      className="pointer-events-auto absolute z-10 w-56 -translate-x-1/2 -translate-y-full rounded-lg border bg-popover p-3 text-popover-foreground shadow-md"
-      style={{ left: `${leftPct}%`, top: `calc(${topPct}% - 12px)` }}
+      className="w-56 rounded-lg border bg-popover p-3 text-popover-foreground shadow-md"
     >
       <p className="mb-1 text-xs font-medium text-muted-foreground">
         {group.city || group.countryCode || "Unknown location"}
       </p>
-      <ul className="pointer-events-auto space-y-1.5">
+      <ul className="space-y-1.5">
         {group.peers.map((peer) => {
           const since = sinceLabel(peer);
           return (

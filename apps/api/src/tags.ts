@@ -80,17 +80,21 @@ export interface RepinAction {
 }
 
 /**
- * Decide which tagged pins need a re-pin so their allocations converge on the
- * desired set. A pin is re-pinned iff:
+ * Decide which pins need a re-pin so their allocations converge on the
+ * desired set. Replication is opt-in: every pin is allocation-managed —
+ * untagged pins belong on the main peer only, tagged pins on the main peer
+ * plus subscribers. A pin is re-pinned iff:
  *
  * 1. a desired peer is online but missing from the pin's allocations
- *    (new subscriber, or a subscriber that was offline at pin time), or
+ *    (new subscriber, a subscriber that was offline at pin time, or a legacy
+ *    pin-everywhere pin with empty allocations awaiting conversion), or
  * 2. the allocations contain peers outside the desired set (unsubscribed, or
  *    substitutes the allocator picked while a subscriber was offline) AND
  *    every desired peer is online — re-pinning earlier would just make the
  *    allocator substitute again.
  *
- * Untagged pins are never touched.
+ * Converting a legacy replication-factor -1 pin makes every non-allocated
+ * follower unpin its copy.
  */
 export function planReallocations(
   pins: PinInfo[],
@@ -100,8 +104,7 @@ export function planReallocations(
 ): RepinAction[] {
   const actions: RepinAction[] = [];
   for (const pin of pins) {
-    const tags = pinTags(pin);
-    if (!tags) continue;
+    const tags = pinTags(pin) ?? [];
 
     const desired = desiredAllocations(tags, mainPeerId, subscriptions);
     const actual = new Set(pin.allocations);

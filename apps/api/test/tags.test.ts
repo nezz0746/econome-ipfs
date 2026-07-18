@@ -82,8 +82,21 @@ function pin(overrides: Partial<PinInfo>): PinInfo {
 const allOnline = new Set(["main", "peer-b", "peer-c", "peer-d"]);
 
 describe("planReallocations", () => {
-  it("ignores untagged pins", () => {
-    const pins = [pin({ allocations: [] })];
+  it("converts untagged pins (incl. legacy rf -1) to main-only", () => {
+    const pins = [
+      pin({
+        allocations: [],
+        replicationFactorMin: -1,
+        replicationFactorMax: -1,
+      }),
+    ];
+    expect(planReallocations(pins, subs, "main", allOnline)).toEqual([
+      { cid: "c1", name: "one", tags: [], allocations: ["main"] },
+    ]);
+  });
+
+  it("leaves converged untagged pins alone", () => {
+    const pins = [pin({ allocations: ["main"] })];
     expect(planReallocations(pins, subs, "main", allOnline)).toEqual([]);
   });
 

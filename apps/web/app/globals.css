@@ -148,3 +148,13 @@
     @apply font-sans;
     }
 }
+/* MapLibre popup chrome off — the peers-map popup renders its own card. */
+.peers-map-popup .maplibregl-popup-content {
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+.peers-map-popup .maplibregl-popup-tip {
+  border-top-color: var(--border);
+  border-bottom-color: var(--border);
+}

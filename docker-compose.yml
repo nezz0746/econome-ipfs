@@ -70,8 +70,6 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/econome}
       CLUSTER_API_URL: ${CLUSTER_API_URL:-http://cluster:9094}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-dev-internal-token}
-      REPLICATION_MIN: ${REPLICATION_MIN:--1}
-      REPLICATION_MAX: ${REPLICATION_MAX:--1}
       ACCOUNTING_INTERVAL_MS: ${ACCOUNTING_INTERVAL_MS:-}
     ports:
       - "8080:8080"
