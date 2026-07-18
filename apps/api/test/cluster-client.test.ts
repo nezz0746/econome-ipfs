@@ -178,9 +178,9 @@ describe("ClusterClient", () => {
     await expect(client.id()).resolves.toBe("peer-main");
   });
 
-  it("parses pin metadata on /pins listings", async () => {
+  it("reads the pinset from /allocations (local CRDT state, not peer status)", async () => {
     const fetchImpl = mockFetch({
-      "/pins": {
+      "/allocations": {
         body: JSON.stringify({
           cid: { "/": "bafyc1" },
           name: "one",
@@ -196,8 +196,12 @@ describe("ClusterClient", () => {
     expect(pins[0]).toMatchObject({
       cid: "bafyc1",
       allocations: ["peer-a"],
+      replicationFactorMin: 1,
+      replicationFactorMax: 2,
       metadata: { tags: "photos" },
     });
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(String(calls[0]?.[0])).toContain("/allocations");
   });
 
   it("pinByCid throws on a non-ok response", async () => {

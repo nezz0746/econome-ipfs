@@ -210,8 +210,16 @@ export class ClusterClient {
     }));
   }
 
+  /**
+   * The cluster pinset from GET /allocations — a purely local CRDT-state
+   * read. (GET /pins is the *status* endpoint: it queries every peer over
+   * the network per CID and takes seconds on a large pinset; only
+   * {@link pinStatuses} should pay that cost.)
+   */
   async pins(): Promise<PinInfo[]> {
-    const raw = parseNdjson<Record<string, any>>(await this.getText("/pins"));
+    const raw = parseNdjson<Record<string, any>>(
+      await this.getText("/allocations"),
+    );
     return raw.map((p) => ({
       cid: normalizeCid(p.cid),
       name: String(p.name ?? ""),

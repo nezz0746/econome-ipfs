@@ -14,6 +14,7 @@ import { and, desc, eq, inArray, isNull, max } from "drizzle-orm";
 
 import { runAccountingJob } from "./accounting";
 import { createApp, type RecordedUpload } from "./app";
+import { cacheClusterReads } from "./cluster-cache";
 import { ClusterClient } from "./cluster-client";
 import { loadConfig } from "./config";
 import { createPeerService } from "./peer-service";
@@ -22,7 +23,14 @@ import { runReallocationJob } from "./reallocation";
 
 const config = loadConfig();
 const db = getDb();
-const cluster = new ClusterClient(config.clusterApiUrl);
+// Peer status (GET /pins) fans out to every peer per CID — seconds on a
+// large pinset. Serve dashboard reads from a short-lived cache; the jobs
+// and gateway share it, so at most one status sweep runs per window.
+const CLUSTER_READ_TTL_MS = 15_000;
+const cluster = cacheClusterReads(
+  new ClusterClient(config.clusterApiUrl),
+  CLUSTER_READ_TTL_MS,
+);
 
 const GEO_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
