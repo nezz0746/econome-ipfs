@@ -90,9 +90,9 @@ export default async function OverviewPage() {
             </span>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+            <div className="h-2 w-full overflow-hidden bg-secondary">
               <div
-                className="h-full rounded-full bg-primary transition-all"
+                className="h-full bg-primary transition-all"
                 style={{
                   width: `${
                     progress.total > 0

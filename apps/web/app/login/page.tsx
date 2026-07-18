@@ -1,9 +1,9 @@
 "use client";
 
-import { Boxes } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { EconomeMark } from "@/components/econome-mark";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -47,9 +47,7 @@ export default function LoginPage() {
     <main className="flex min-h-svh items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-3">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Boxes className="size-5" />
-          </div>
+          <EconomeMark className="size-10" />
           <div className="space-y-1">
             <CardTitle className="text-xl">Econome</CardTitle>
             <CardDescription>

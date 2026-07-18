@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Boxes,
   Files,
   KeyRound,
   LayoutDashboard,
@@ -14,6 +13,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { EconomeMark } from "@/components/econome-mark";
 import { NavUser } from "@/components/nav-user";
 import {
   Sidebar,
@@ -65,9 +65,7 @@ export function AppSidebar({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" render={<Link href="/dashboard" />}>
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <Boxes className="size-4" />
-              </div>
+              <EconomeMark className="aspect-square size-8 shrink-0" />
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-heading text-base">
                   L&apos;Économe
