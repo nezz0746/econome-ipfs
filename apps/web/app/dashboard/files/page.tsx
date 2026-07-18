@@ -121,7 +121,7 @@ export default async function FilesPage({
     <>
       <PageHeader
         title="Files"
-        description="Content ingested into the cluster. Each file is pinned across the peers."
+        description="Content ingested into the cluster. Each file is pinned to the main node and its tag subscribers."
       />
 
       <Card>
