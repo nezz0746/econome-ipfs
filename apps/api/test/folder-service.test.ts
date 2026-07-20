@@ -24,7 +24,9 @@ function makeFakes(opts: { pins?: PinInfo[]; root?: string } = {}) {
     filesCp: vi.fn(
       async (f: string, t: string) => void ops.push(`cp:${f}->${t}`),
     ),
-    filesMv: vi.fn(async () => {}),
+    filesMv: vi.fn(
+      async (f: string, t: string) => void ops.push(`mv:${f}->${t}`),
+    ),
     filesRm: vi.fn(async (p: string) => void ops.push(`rm:${p}`)),
     filesFlush: vi.fn(async () => {
       ops.push("flush");
@@ -277,6 +279,17 @@ describe("mutations", () => {
     await service.removePath("docs", "sub/a.txt");
     expect(ops).toContain("rm:/econome/docs/sub/a.txt");
     expect(ops.filter((o) => o === "flush")).toHaveLength(2);
+  });
+
+  it("movePath mkdirs the destination directory before mv (kubo files/mv does not auto-create parents)", async () => {
+    const { service, ops } = makeFakes();
+    await service.movePath("docs", "a.txt", "new/nested/a.txt");
+    expect(
+      ops.indexOf("mkdir:/econome/docs/new/nested"),
+    ).toBeGreaterThanOrEqual(0);
+    expect(ops.indexOf("mkdir:/econome/docs/new/nested")).toBeLessThan(
+      ops.indexOf("mv:/econome/docs/a.txt->/econome/docs/new/nested/a.txt"),
+    );
   });
 
   it("setTags re-pins the current root with new metadata, no publish", async () => {

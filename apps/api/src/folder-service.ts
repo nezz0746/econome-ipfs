@@ -310,6 +310,10 @@ export class FolderService {
     this.assertRelPath(to);
     return this.enqueue(name, async () => {
       await this.assertExists(name);
+      // Unlike files/cp, kubo's files/mv has no `parents` option — the
+      // destination directory must already exist or the move 500s.
+      const toDir = to.includes("/") ? to.slice(0, to.lastIndexOf("/")) : "";
+      if (toDir) await this.deps.kubo.filesMkdir(this.mfsPath(name, toDir));
       await this.deps.kubo.filesMv(
         this.mfsPath(name, from),
         this.mfsPath(name, to),
