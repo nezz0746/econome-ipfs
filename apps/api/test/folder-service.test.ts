@@ -205,4 +205,20 @@ describe("list / get", () => {
     );
     expect(await service.get("nope")).toBeNull();
   });
+
+  it("propagates cluster errors instead of returning null", async () => {
+    const { service, cluster } = makeFakes();
+    (cluster.pins as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("Cluster /allocations failed: 404 Not Found"),
+    );
+    await expect(service.get("docs")).rejects.toThrow(/Cluster/);
+  });
+
+  it("returns null when the subpath is missing", async () => {
+    const { service, kubo } = makeFakes();
+    (kubo.filesLs as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("kubo files/ls failed: 500 file does not exist"),
+    );
+    expect(await service.get("docs", "nope")).toBeNull();
+  });
 });

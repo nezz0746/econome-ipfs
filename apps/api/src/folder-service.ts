@@ -11,7 +11,7 @@
  */
 
 import type { ClusterClient, PinInfo, PinOptions } from "./cluster-client";
-import type { KuboClient, MfsEntry } from "./kubo-client";
+import type { KuboClient, MfsEntry, MfsStat } from "./kubo-client";
 import {
   parseTags,
   TAGS_META_KEY,
@@ -53,8 +53,9 @@ export interface FolderDetail extends FolderSummary {
 export interface FolderServiceDeps {
   kubo: KuboClient;
   /**
-   * MUST be the uncached ClusterClient: commit re-reads the pinset right
-   * after pinning, which the 15s dashboard read-cache would serve stale.
+   * MUST be the uncached ClusterClient: commit reads the pinset immediately
+   * before pinning and on every successive commit, which the 15s dashboard
+   * read-cache would serve stale.
    */
   cluster: Pick<ClusterClient, "pins" | "pinByCid" | "unpin">;
   getMainPeerId: () => Promise<string>;
@@ -203,27 +204,28 @@ export class FolderService {
   async get(name: string, path = ""): Promise<FolderDetail | null> {
     if (!isValidFolderName(name)) return null;
     if (path !== "" && !isValidRelPath(path)) return null;
+    let stat: MfsStat;
+    let entries: MfsEntry[];
     try {
-      const stat = await this.deps.kubo.filesStat(this.mfsPath(name));
-      const [entries, keys, pins] = await Promise.all([
-        this.deps.kubo.filesLs(this.mfsPath(name, path)),
-        this.deps.kubo.keyList(),
-        this.deps.cluster.pins(),
-      ]);
-      const pin = this.folderPins(pins, name)[0];
-      return {
-        name,
-        rootCid: stat.cid,
-        ipnsName:
-          keys.find((k) => k.name === `${KEY_PREFIX}${name}`)?.id ?? null,
-        size: stat.cumulativeSize,
-        tags: pin ? (parseTags(pin.metadata[TAGS_META_KEY]) ?? []) : [],
-        path,
-        entries,
-      };
+      stat = await this.deps.kubo.filesStat(this.mfsPath(name));
+      entries = await this.deps.kubo.filesLs(this.mfsPath(name, path));
     } catch (err) {
       if (notFound(err)) return null;
       throw err;
     }
+    const [keys, pins] = await Promise.all([
+      this.deps.kubo.keyList(),
+      this.deps.cluster.pins(),
+    ]);
+    const pin = this.folderPins(pins, name)[0];
+    return {
+      name,
+      rootCid: stat.cid,
+      ipnsName: keys.find((k) => k.name === `${KEY_PREFIX}${name}`)?.id ?? null,
+      size: stat.cumulativeSize,
+      tags: pin ? (parseTags(pin.metadata[TAGS_META_KEY]) ?? []) : [],
+      path,
+      entries,
+    };
   }
 }
