@@ -2,6 +2,7 @@
 
 import {
   Files,
+  FolderOpen,
   KeyRound,
   LayoutDashboard,
   Loader2,
@@ -31,6 +32,7 @@ import {
 const NAV = [
   { title: "Overview", url: "/dashboard", icon: LayoutDashboard },
   { title: "Files", url: "/dashboard/files", icon: Files },
+  { title: "Folders", url: "/dashboard/folders", icon: FolderOpen },
   { title: "Peers & Followers", url: "/dashboard/peers", icon: Network },
   { title: "Onboarding", url: "/dashboard/onboarding", icon: UserPlus },
   { title: "API Keys", url: "/dashboard/api-keys", icon: KeyRound },
