@@ -222,3 +222,111 @@ describe("list / get", () => {
     expect(await service.get("docs", "nope")).toBeNull();
   });
 });
+
+describe("mutations", () => {
+  it("addFiles adds unpinned bytes, cps into place, commits once", async () => {
+    const { service, kubo, ops } = makeFakes({
+      pins: [folderPin({ cid: "bafyroot" })],
+    });
+    const res = await service.addFiles("docs", [
+      { content: new Blob(["a"]), path: "a.txt" },
+      { content: new Blob(["b"]), path: "sub/b.txt" },
+    ]);
+    expect(res.added).toEqual([
+      { path: "a.txt", cid: "bafyfile" },
+      { path: "sub/b.txt", cid: "bafyfile" },
+    ]);
+    expect(res.rootCid).toBe("bafyroot");
+    expect(kubo.addFile).toHaveBeenCalledTimes(2);
+    expect(ops.filter((o) => o === "flush")).toHaveLength(1); // one commit
+    expect(ops).toContain("cp:/ipfs/bafyfile->/econome/docs/sub/b.txt");
+  });
+
+  it("addFiles with commit:false stages without flushing", async () => {
+    const { service, ops } = makeFakes();
+    const res = await service.addFiles(
+      "docs",
+      [{ content: new Blob(["a"]), path: "a.txt" }],
+      { commit: false },
+    );
+    expect(res.rootCid).toBeNull();
+    expect(ops).not.toContain("flush");
+  });
+
+  it("addFiles rejects traversal paths", async () => {
+    const { service } = makeFakes();
+    await expect(
+      service.addFiles("docs", [{ content: new Blob(["x"]), path: "../x" }]),
+    ).rejects.toThrow(/invalid path/);
+  });
+
+  it("addCids mounts existing CIDs and commits", async () => {
+    const { service, ops } = makeFakes();
+    await service.addCids("docs", [{ cid: "bafyext", path: "ext.bin" }]);
+    expect(ops).toContain("cp:/ipfs/bafyext->/econome/docs/ext.bin");
+    expect(ops).toContain("flush");
+  });
+
+  it("movePath and removePath commit after mutating", async () => {
+    const { service, kubo, ops } = makeFakes();
+    await service.movePath("docs", "a.txt", "sub/a.txt");
+    expect(kubo.filesMv).toHaveBeenCalledWith(
+      "/econome/docs/a.txt",
+      "/econome/docs/sub/a.txt",
+    );
+    await service.removePath("docs", "sub/a.txt");
+    expect(ops).toContain("rm:/econome/docs/sub/a.txt");
+    expect(ops.filter((o) => o === "flush")).toHaveLength(2);
+  });
+
+  it("setTags re-pins the current root with new metadata, no publish", async () => {
+    const { service, cluster, kubo } = makeFakes({
+      pins: [folderPin({ cid: "bafyroot" })],
+    });
+    await service.setTags("docs", ["videos"]);
+    expect(cluster.pinByCid).toHaveBeenCalledWith(
+      "bafyroot",
+      expect.objectContaining({
+        metadata: { tags: "videos", folder: "docs" },
+      }),
+    );
+    expect(kubo.namePublish).not.toHaveBeenCalled();
+  });
+
+  it("remove unpins every folder root, removes the dir and the key", async () => {
+    const { service, ops } = makeFakes({
+      pins: [folderPin({ cid: "bafyold" }), folderPin({ cid: "bafyroot" })],
+    });
+    await service.remove("docs");
+    expect(ops).toContain("unpin:bafyold");
+    expect(ops).toContain("unpin:bafyroot");
+    expect(ops).toContain("rm:/econome/docs");
+    expect(ops).toContain("keyrm:econome-folder-docs");
+  });
+
+  it("serializes concurrent mutations on the same folder", async () => {
+    const { service, kubo, ops } = makeFakes();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    (kubo.addFile as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async () => {
+        await gate;
+        return "bafyfile";
+      },
+    );
+    const first = service.addFiles("docs", [
+      { content: new Blob(["a"]), path: "a.txt" },
+    ]);
+    const second = service.removePath("docs", "b.txt");
+    // Nothing from the second op may run until the first completes.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(ops).not.toContain("rm:/econome/docs/b.txt");
+    release();
+    await Promise.all([first, second]);
+    expect(ops.indexOf("rm:/econome/docs/b.txt")).toBeGreaterThan(
+      ops.indexOf("cp:/ipfs/bafyfile->/econome/docs/a.txt"),
+    );
+  });
+});

@@ -228,4 +228,136 @@ export class FolderService {
       entries,
     };
   }
+
+  private assertFolderName(name: string) {
+    if (!isValidFolderName(name))
+      throw new Error(`invalid folder name: ${name}`);
+  }
+
+  private assertRelPath(path: string) {
+    if (!isValidRelPath(path)) throw new Error(`invalid path: ${path}`);
+  }
+
+  private async assertExists(name: string) {
+    try {
+      await this.deps.kubo.filesStat(this.mfsPath(name));
+    } catch (err) {
+      if (notFound(err)) throw new Error(`folder not found: ${name}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Upload file bytes into the folder. Bytes go to the blockstore unpinned
+   * (`add?pin=false`) — the folder root's recursive cluster pin protects
+   * them once cp'd in. `commit: false` stages without pinning/publishing;
+   * callers doing chunked uploads commit on their last request (the
+   * reconcile sweep heals an interrupted sequence).
+   */
+  async addFiles(
+    name: string,
+    files: { content: Blob; path: string }[],
+    opts: { commit?: boolean } = {},
+  ): Promise<{
+    added: { path: string; cid: string }[];
+    rootCid: string | null;
+  }> {
+    this.assertFolderName(name);
+    for (const f of files) this.assertRelPath(f.path);
+    return this.enqueue(name, async () => {
+      await this.assertExists(name);
+      const added: { path: string; cid: string }[] = [];
+      for (const f of files) {
+        const base = f.path.split("/").pop() ?? f.path;
+        const cid = await this.deps.kubo.addFile(f.content, base);
+        await this.deps.kubo.filesCp(
+          `/ipfs/${cid}`,
+          this.mfsPath(name, f.path),
+        );
+        added.push({ path: f.path, cid });
+      }
+      const rootCid = opts.commit === false ? null : await this.commit(name);
+      return { added, rootCid };
+    });
+  }
+
+  /** Mount already-stored CIDs into the folder tree. */
+  async addCids(
+    name: string,
+    entries: { cid: string; path: string }[],
+  ): Promise<{ rootCid: string }> {
+    this.assertFolderName(name);
+    for (const e of entries) this.assertRelPath(e.path);
+    return this.enqueue(name, async () => {
+      await this.assertExists(name);
+      for (const e of entries) {
+        await this.deps.kubo.filesCp(
+          `/ipfs/${e.cid}`,
+          this.mfsPath(name, e.path),
+        );
+      }
+      return { rootCid: await this.commit(name) };
+    });
+  }
+
+  async movePath(
+    name: string,
+    from: string,
+    to: string,
+  ): Promise<{ rootCid: string }> {
+    this.assertFolderName(name);
+    this.assertRelPath(from);
+    this.assertRelPath(to);
+    return this.enqueue(name, async () => {
+      await this.assertExists(name);
+      await this.deps.kubo.filesMv(
+        this.mfsPath(name, from),
+        this.mfsPath(name, to),
+      );
+      return { rootCid: await this.commit(name) };
+    });
+  }
+
+  async removePath(name: string, path: string): Promise<{ rootCid: string }> {
+    this.assertFolderName(name);
+    this.assertRelPath(path);
+    return this.enqueue(name, async () => {
+      await this.assertExists(name);
+      await this.deps.kubo.filesRm(this.mfsPath(name, path));
+      return { rootCid: await this.commit(name) };
+    });
+  }
+
+  /** Retarget replication: re-pin the current root with new tag metadata. */
+  async setTags(name: string, tags: string[]): Promise<void> {
+    this.assertFolderName(name);
+    await this.enqueue(name, async () => {
+      await this.assertExists(name);
+      const rootCid = await this.deps.kubo.filesFlush(this.mfsPath(name));
+      await this.deps.cluster.pinByCid(
+        rootCid,
+        await this.pinOptions(name, tags),
+      );
+    });
+  }
+
+  /**
+   * Delete the folder: release every cluster pin, remove the MFS dir, and
+   * retire the IPNS key (the /ipns/ name stops resolving permanently).
+   */
+  async remove(name: string): Promise<void> {
+    this.assertFolderName(name);
+    await this.enqueue(name, async () => {
+      const mine = this.folderPins(await this.deps.cluster.pins(), name);
+      for (const pin of mine) {
+        await this.deps.cluster
+          .unpin(pin.cid)
+          .catch((err) => this.log(`unpin ${pin.cid} failed: ${err}`));
+      }
+      await this.deps.kubo.filesRm(this.mfsPath(name));
+      await this.deps.kubo
+        .keyRm(`${KEY_PREFIX}${name}`)
+        .catch((err) => this.log(`key rm for ${name} failed: ${err}`));
+    });
+  }
 }
