@@ -698,4 +698,42 @@ describe("docs endpoints", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type") ?? "").toContain("text/html");
   });
+
+  it("documents every ingest route with ApiKeyAuth", async () => {
+    const res = await createApp(makeDeps()).request("/openapi.json");
+    const spec = (await res.json()) as {
+      paths: Record<
+        string,
+        Record<string, { security?: unknown; tags?: string[] }>
+      >;
+    };
+    const expects: [string, string][] = [
+      ["/ingest", "post"],
+      ["/ingest/pin", "post"],
+      ["/ingest/import", "post"],
+      ["/ingest/record", "post"],
+      ["/ingest/{cid}", "delete"],
+    ];
+    for (const [path, method] of expects) {
+      const op = spec.paths[path]?.[method];
+      expect(op, `${method.toUpperCase()} ${path}`).toBeDefined();
+      expect(op?.security).toEqual([{ ApiKeyAuth: [] }]);
+      expect(op?.tags).toEqual(["ingest"]);
+    }
+  });
+
+  it("describes /ingest as a multipart upload", async () => {
+    const res = await createApp(makeDeps()).request("/openapi.json");
+    const spec = (await res.json()) as {
+      paths: Record<
+        string,
+        { post?: { requestBody?: { content?: Record<string, unknown> } } }
+      >;
+    };
+    expect(
+      spec.paths["/ingest"]?.post?.requestBody?.content?.[
+        "multipart/form-data"
+      ],
+    ).toBeDefined();
+  });
 });
