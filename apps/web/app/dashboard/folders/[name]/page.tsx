@@ -105,6 +105,10 @@ export default async function FolderDetailPage({
               <TableBody>
                 {folder.entries.map((entry) => {
                   const entryPath = path ? `${path}/${entry.name}` : entry.name;
+                  const entryHref = `${GATEWAY_URL}/ipfs/${folder.rootCid}/${entryPath
+                    .split("/")
+                    .map(encodeURIComponent)
+                    .join("/")}`;
                   return (
                     <TableRow key={entry.name}>
                       <TableCell className="font-medium">
@@ -118,7 +122,7 @@ export default async function FolderDetailPage({
                         ) : (
                           <a
                             className="underline-offset-4 hover:underline"
-                            href={`${GATEWAY_URL}/ipfs/${folder.rootCid}/${entryPath}`}
+                            href={entryHref}
                             target="_blank"
                             rel="noreferrer"
                           >
