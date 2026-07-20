@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { FolderAddControls } from "@/components/folder-add-controls";
 import { PageHeader } from "@/components/page-header";
 import { TagBadges } from "@/components/tag-badges";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,8 @@ export default async function FolderDetailPage({
           );
         })}
       </nav>
+
+      <FolderAddControls folderName={folder.name} currentPath={path} />
 
       <Card>
         <CardContent>
