@@ -33,9 +33,12 @@ export function FolderAddControls({
 
   async function onUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const files = Array.from(fileInputRef.current?.files ?? []).filter(
-      (f) => f.size > 0,
-    );
+    const allFiles = Array.from(fileInputRef.current?.files ?? []);
+    const files = allFiles.filter((f) => f.size > 0);
+    const emptyCount = allFiles.length - files.length;
+    if (emptyCount > 0) {
+      toast.error(`${emptyCount} empty file(s) skipped`);
+    }
     if (files.length === 0) {
       toast.error("Choose at least one file");
       return;
@@ -52,22 +55,34 @@ export function FolderAddControls({
     setUploading(true);
     try {
       let failed = 0;
+      let committed = false;
       for (const [i, file] of toUpload.entries()) {
         const fd = new FormData();
         fd.append("name", folderName);
         fd.append("path", destPath(file.name));
-        fd.append("commit", i === toUpload.length - 1 ? "true" : "false");
+        const isLast = i === toUpload.length - 1;
+        fd.append("commit", isLast ? "true" : "false");
         fd.append("file", file, file.name);
         const res = await uploadFolderEntry(fd);
         if (!res.ok) {
           failed += 1;
           toast.error(`${file.name}: ${res.error ?? "upload failed"}`);
+        } else if (isLast) {
+          committed = true;
         }
       }
       const ok = toUpload.length - failed;
-      if (ok > 0) toast.success(`Added ${ok} file(s) to '${folderName}'`);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      router.refresh();
+      if (ok > 0 && committed) {
+        toast.success(`Added ${ok} file(s) to '${folderName}'`);
+        if (failed === 0 && fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        router.refresh();
+      } else if (ok > 0 && !committed) {
+        toast.warning(
+          `${ok} file(s) staged, but the new folder version couldn't be committed — it will finalize automatically within a minute`,
+        );
+      }
     } finally {
       setUploading(false);
     }
@@ -110,6 +125,7 @@ export function FolderAddControls({
               type="file"
               multiple
               ref={fileInputRef}
+              disabled={uploading}
             />
             <p className="text-xs text-muted-foreground">
               Max {MAX_UPLOAD_MB} MB per file. The batch lands as one new folder
@@ -130,6 +146,7 @@ export function FolderAddControls({
               placeholder="bafy…"
               className="font-mono"
               required
+              disabled={addingCid}
             />
           </div>
           <div className="space-y-2">
@@ -139,6 +156,7 @@ export function FolderAddControls({
               name="entryName"
               placeholder="e.g. archive.tar"
               required
+              disabled={addingCid}
             />
           </div>
           <Button type="submit" variant="secondary" disabled={addingCid}>
