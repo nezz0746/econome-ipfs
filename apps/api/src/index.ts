@@ -17,6 +17,8 @@ import { createApp, type RecordedUpload } from "./app";
 import { cacheClusterReads } from "./cluster-cache";
 import { ClusterClient } from "./cluster-client";
 import { loadConfig } from "./config";
+import { FolderService } from "./folder-service";
+import { KuboClient } from "./kubo-client";
 import { createPeerService } from "./peer-service";
 import { resolveSizes } from "./pin-size";
 import { runReallocationJob } from "./reallocation";
@@ -27,10 +29,8 @@ const db = getDb();
 // large pinset. Serve dashboard reads from a short-lived cache; the jobs
 // and gateway share it, so at most one status sweep runs per window.
 const CLUSTER_READ_TTL_MS = 15_000;
-const cluster = cacheClusterReads(
-  new ClusterClient(config.clusterApiUrl),
-  CLUSTER_READ_TTL_MS,
-);
+const clusterBase = new ClusterClient(config.clusterApiUrl);
+const cluster = cacheClusterReads(clusterBase, CLUSTER_READ_TTL_MS);
 
 const GEO_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -174,9 +174,30 @@ async function listTagSubscriptions() {
     .from(participants);
 }
 
+const kubo = new KuboClient(config.ipfsApiUrl);
+
+// Folder commits re-read the pinset immediately after pinning, so the
+// service gets the raw client, not the 15s dashboard read-cache.
+let cachedMainPeerId: Promise<string> | null = null;
+const getMainPeerId = () => {
+  cachedMainPeerId ??= clusterBase.id().catch((err) => {
+    cachedMainPeerId = null;
+    throw err;
+  });
+  return cachedMainPeerId;
+};
+
+const folderService = new FolderService({
+  kubo,
+  cluster: clusterBase,
+  getMainPeerId,
+  listTagSubscriptions,
+});
+
 const app = createApp({
   cluster,
   peerService,
+  folders: folderService,
   internalToken: config.internalToken,
   ipfsApiUrl: config.ipfsApiUrl,
   async findApiKey(hashedKey: string) {
@@ -248,6 +269,16 @@ async function main() {
     await migrateWithRetry();
   }
 
+  folderService
+    .reconcile()
+    .then((r) => {
+      if (r.repinned || r.cleaned)
+        console.log(
+          `[folders] boot reconcile: repinned ${r.repinned}, cleaned ${r.cleaned}`,
+        );
+    })
+    .catch((err) => console.error("[folders] boot reconcile failed:", err));
+
   if (config.accountingIntervalMs) {
     const interval = config.accountingIntervalMs;
     const tick = () => {
@@ -270,6 +301,15 @@ async function main() {
           if (n > 0) console.log(`[reallocation] re-pinned ${n} tagged CID(s)`);
         })
         .catch((err) => console.error("[reallocation] job failed:", err));
+      folderService
+        .reconcile()
+        .then((r) => {
+          if (r.repinned || r.cleaned)
+            console.log(
+              `[folders] reconciled: repinned ${r.repinned}, cleaned ${r.cleaned}`,
+            );
+        })
+        .catch((err) => console.error("[folders] reconcile failed:", err));
     };
     setInterval(tick, interval);
     console.log(`[accounting] enabled, every ${interval}ms`);

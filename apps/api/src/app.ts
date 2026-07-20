@@ -5,14 +5,11 @@ import { logger } from "hono/logger";
 import { type ApiKeyRecord, apiKeyAuth, internalAuth } from "./auth";
 import { importCidFromGateway } from "./car-import";
 import type { ClusterClient, PinOptions } from "./cluster-client";
+import { createFolderRoutes } from "./folder-routes";
+import type { FolderService } from "./folder-service";
 import type { PeerService } from "./peer-service";
 import { summarizePinProgress } from "./pin-progress";
-import {
-  desiredAllocations,
-  parseTags,
-  TAGS_META_KEY,
-  type TagSubscription,
-} from "./tags";
+import { parseTags, type TagSubscription, tagPinOptions } from "./tags";
 
 export interface RecordedUpload {
   cid: string;
@@ -37,6 +34,8 @@ export interface AppDeps {
   ipfsApiUrl: string;
   /** Enriched peer views (files, geo, bytes, history) for the dashboard. */
   peerService: PeerService;
+  /** MFS-backed folders (create/mutate/list + reconcile). */
+  folders: FolderService;
 }
 
 type Variables = { apiKeyId: string };
@@ -95,19 +94,11 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
    * metadata so the reallocation job can reconcile it later.
    */
   async function pinOptionsForTags(tags: string[]): Promise<PinOptions> {
-    const main = await getMainPeerId();
-    const allocations =
-      tags.length === 0
-        ? [main]
-        : desiredAllocations(tags, main, await deps.listTagSubscriptions());
-    return {
-      replicationMin: 1,
-      replicationMax: allocations.length,
-      userAllocations: allocations,
-      ...(tags.length > 0 && {
-        metadata: { [TAGS_META_KEY]: tags.join(",") },
-      }),
-    };
+    return tagPinOptions(
+      tags,
+      await getMainPeerId(),
+      await deps.listTagSubscriptions(),
+    );
   }
 
   app.get("/health", (c) => c.json({ ok: true }));
@@ -345,6 +336,17 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
     return c.json({ cid, unpinned: true });
   });
 
+  // ----- Folders (MFS + IPNS) --------------------------------------------
+  // Mounted twice: /folders for machine clients (API key), and under the
+  // internal-token gateway below for the dashboard BFF.
+  const folderRoutes = createFolderRoutes({
+    folders: deps.folders,
+    recordUpload: deps.recordUpload,
+  });
+  app.use("/folders", apiKeyAuth(deps.findApiKey));
+  app.use("/folders/*", apiKeyAuth(deps.findApiKey));
+  app.route("/folders", folderRoutes);
+
   // ----- Cluster gateway (dashboard via Next BFF, internal-token gated) ---
   const gateway = new Hono<{ Variables: Variables }>();
   gateway.use("*", internalAuth(deps.internalToken));
@@ -386,6 +388,8 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
       underReplicated,
     });
   });
+
+  gateway.route("/folders", folderRoutes);
 
   app.route("/cluster", gateway);
 

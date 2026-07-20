@@ -36,6 +36,7 @@ services:
     ports:
       - "4001:4001" # swarm
       - "8081:8080" # gateway (host 8081 to avoid clashing with the API)
+      - "127.0.0.1:5001:5001" # RPC API — loopback only, for the host-run dev API (MFS/IPNS)
 
   cluster:
     image: ipfs/ipfs-cluster:latest
@@ -69,6 +70,7 @@ services:
       PORT: 8080
       DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/econome}
       CLUSTER_API_URL: ${CLUSTER_API_URL:-http://cluster:9094}
+      IPFS_API_URL: ${IPFS_API_URL:-http://kubo:5001}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-dev-internal-token}
       ACCOUNTING_INTERVAL_MS: ${ACCOUNTING_INTERVAL_MS:-}
     ports:

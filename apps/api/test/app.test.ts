@@ -65,6 +65,25 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
       enrichedPeers: async () => ({ peers: [], locationsUpdatedAt: null }),
       peerDetail: async () => null,
     },
+    folders: {
+      create: vi.fn(async (name: string) => ({
+        name,
+        rootCid: "bafyroot",
+        ipnsName: "k51abc",
+      })),
+      list: vi.fn(async () => []),
+      get: vi.fn(async () => null),
+      addFiles: vi.fn(async () => ({
+        added: [{ path: "a.txt", cid: "bafyfile" }],
+        rootCid: "bafyroot",
+      })),
+      addCids: vi.fn(async () => ({ rootCid: "bafyroot" })),
+      movePath: vi.fn(async () => ({ rootCid: "bafyroot" })),
+      removePath: vi.fn(async () => ({ rootCid: "bafyroot" })),
+      setTags: vi.fn(async () => {}),
+      remove: vi.fn(async () => {}),
+      reconcile: vi.fn(async () => ({ repinned: 0, cleaned: 0 })),
+    } as unknown as AppDeps["folders"],
     ...overrides,
   };
 }
@@ -500,5 +519,153 @@ describe("cluster gateway", () => {
       totalPins: 1,
       underReplicated: 1,
     });
+  });
+});
+
+describe("folder routes", () => {
+  it("rejects /folders without an api key", async () => {
+    const res = await createApp(makeDeps()).request("/folders", {
+      method: "POST",
+      body: JSON.stringify({ name: "docs" }),
+      headers: { "content-type": "application/json" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("creates a folder via api key", async () => {
+    const deps = makeDeps();
+    const res = await createApp(deps).request("/folders", {
+      method: "POST",
+      headers: { "x-api-key": "k", "content-type": "application/json" },
+      body: JSON.stringify({ name: "docs", tags: ["photos"] }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      name: "docs",
+      rootCid: "bafyroot",
+      ipnsName: "k51abc",
+    });
+    expect(deps.folders.create).toHaveBeenCalledWith("docs", ["photos"]);
+  });
+
+  it("serves the same routes on /cluster/folders with the internal token", async () => {
+    const res = await createApp(makeDeps()).request("/cluster/folders", {
+      headers: { "x-internal-token": "tok" },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
+
+  it("400s on an invalid folder name", async () => {
+    const deps = makeDeps();
+    (deps.folders.create as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("invalid folder name: ../x"),
+    );
+    const res = await createApp(deps).request("/folders", {
+      method: "POST",
+      headers: { "x-api-key": "k", "content-type": "application/json" },
+      body: JSON.stringify({ name: "../x" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("404s a missing folder on GET", async () => {
+    const res = await createApp(makeDeps()).request("/folders/nope", {
+      headers: { "x-api-key": "k" },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("uploads files with paths, records uploads rows", async () => {
+    const recordUpload = vi.fn(async () => {});
+    const deps = makeDeps({ recordUpload });
+    const form = new FormData();
+    form.append("file", new File(["a"], "a.txt"));
+    form.append("path", "sub/a.txt");
+    const res = await createApp(deps).request("/folders/docs/files", {
+      method: "POST",
+      headers: { "x-api-key": "k" },
+      body: form,
+    });
+    expect(res.status).toBe(200);
+    expect(deps.folders.addFiles).toHaveBeenCalledWith(
+      "docs",
+      [expect.objectContaining({ path: "sub/a.txt" })],
+      { commit: true },
+    );
+    // Records the relative path inside the folder, not just the basename.
+    expect(recordUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ cid: "bafyfile", name: "docs/a.txt" }),
+    );
+    // (The fake addFiles returns added: [{path: "a.txt", …}]; the route must
+    // build the name from the ADDED entry's path — `docs/` + added.path.)
+  });
+
+  it("honors ?commit=false on uploads", async () => {
+    const deps = makeDeps();
+    const form = new FormData();
+    form.append("file", new File(["a"], "a.txt"));
+    const res = await createApp(deps).request(
+      "/folders/docs/files?commit=false",
+      { method: "POST", headers: { "x-api-key": "k" }, body: form },
+    );
+    expect(res.status).toBe(200);
+    expect(deps.folders.addFiles).toHaveBeenCalledWith(
+      "docs",
+      [expect.objectContaining({ path: "a.txt" })],
+      { commit: false },
+    );
+  });
+
+  it("moves, removes paths, patches tags, deletes the folder", async () => {
+    const deps = makeDeps();
+    const app = createApp(deps);
+    const h = { "x-api-key": "k", "content-type": "application/json" };
+
+    expect(
+      (
+        await app.request("/folders/docs/move", {
+          method: "POST",
+          headers: h,
+          body: JSON.stringify({ from: "a.txt", to: "b/a.txt" }),
+        })
+      ).status,
+    ).toBe(200);
+    expect(deps.folders.movePath).toHaveBeenCalledWith(
+      "docs",
+      "a.txt",
+      "b/a.txt",
+    );
+
+    expect(
+      (
+        await app.request("/folders/docs/files?path=b%2Fa.txt", {
+          method: "DELETE",
+          headers: { "x-api-key": "k" },
+        })
+      ).status,
+    ).toBe(200);
+    expect(deps.folders.removePath).toHaveBeenCalledWith("docs", "b/a.txt");
+
+    expect(
+      (
+        await app.request("/folders/docs", {
+          method: "PATCH",
+          headers: h,
+          body: JSON.stringify({ tags: ["videos"] }),
+        })
+      ).status,
+    ).toBe(200);
+    expect(deps.folders.setTags).toHaveBeenCalledWith("docs", ["videos"]);
+
+    expect(
+      (
+        await app.request("/folders/docs", {
+          method: "DELETE",
+          headers: { "x-api-key": "k" },
+        })
+      ).status,
+    ).toBe(200);
+    expect(deps.folders.remove).toHaveBeenCalledWith("docs");
   });
 });
