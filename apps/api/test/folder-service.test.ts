@@ -330,3 +330,54 @@ describe("mutations", () => {
     );
   });
 });
+
+describe("reconcile", () => {
+  it("re-pins + republishes a drifted folder and unpins stale roots", async () => {
+    const { service, ops, kubo } = makeFakes({
+      pins: [folderPin({ cid: "bafyold" })],
+      root: "bafynew",
+    });
+    (kubo.filesLs as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { name: "docs", type: "dir", size: 0, cid: "bafynew" },
+    ]);
+    const res = await service.reconcile();
+    expect(res).toEqual({ repinned: 1, cleaned: 1 });
+    expect(ops.indexOf("pin:bafynew")).toBeGreaterThan(-1);
+    expect(ops.indexOf("unpin:bafyold")).toBeGreaterThan(
+      ops.indexOf("pin:bafynew"),
+    );
+    expect(ops).toContain("publish:econome-folder-docs:/ipfs/bafynew");
+  });
+
+  it("does nothing when pins already match MFS", async () => {
+    const { service, cluster, kubo } = makeFakes({
+      pins: [folderPin({ cid: "bafyroot" })],
+      root: "bafyroot",
+    });
+    (kubo.filesLs as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { name: "docs", type: "dir", size: 0, cid: "bafyroot" },
+    ]);
+    const res = await service.reconcile();
+    expect(res).toEqual({ repinned: 0, cleaned: 0 });
+    expect(cluster.pinByCid).not.toHaveBeenCalled();
+    expect(kubo.namePublish).not.toHaveBeenCalled();
+  });
+
+  it("unpins orphan folder pins whose MFS dir is gone (MFS wins)", async () => {
+    const { service, ops, kubo } = makeFakes({
+      pins: [folderPin({ cid: "bafyghost", metadata: { folder: "ghost" } })],
+    });
+    (kubo.filesLs as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    const res = await service.reconcile();
+    expect(res).toEqual({ repinned: 0, cleaned: 1 });
+    expect(ops).toContain("unpin:bafyghost");
+  });
+
+  it("survives an empty MFS (no /econome yet)", async () => {
+    const { service, kubo } = makeFakes();
+    (kubo.filesLs as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("kubo files/ls failed: 500 file does not exist"),
+    );
+    expect(await service.reconcile()).toEqual({ repinned: 0, cleaned: 0 });
+  });
+});

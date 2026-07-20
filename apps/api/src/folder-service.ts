@@ -360,4 +360,66 @@ export class FolderService {
         .catch((err) => this.log(`key rm for ${name} failed: ${err}`));
     });
   }
+
+  /**
+   * Drift healing: MFS always wins. For each MFS folder, ensure the flushed
+   * root is the pinned+published one and stale roots are released; unpin
+   * folder pins whose MFS dir no longer exists (interrupted deletes). Covers
+   * every crash-mid-commit case; runs at boot and on the accounting tick.
+   */
+  async reconcile(): Promise<{ repinned: number; cleaned: number }> {
+    let dirs: MfsEntry[];
+    try {
+      dirs = (await this.deps.kubo.filesLs(FOLDER_ROOT)).filter(
+        (e) => e.type === "dir",
+      );
+    } catch (err) {
+      if (notFound(err)) dirs = [];
+      else throw err;
+    }
+    const pins = await this.deps.cluster.pins();
+    let repinned = 0;
+    let cleaned = 0;
+
+    for (const dir of dirs) {
+      await this.enqueue(dir.name, async () => {
+        const rootCid = await this.deps.kubo.filesFlush(this.mfsPath(dir.name));
+        const mine = this.folderPins(pins, dir.name);
+        if (!mine.some((p) => p.cid === rootCid)) {
+          const tags = mine[0]
+            ? (parseTags(mine[0].metadata[TAGS_META_KEY]) ?? [])
+            : [];
+          await this.deps.cluster.pinByCid(
+            rootCid,
+            await this.pinOptions(dir.name, tags),
+          );
+          await this.deps.kubo.namePublish(
+            `${KEY_PREFIX}${dir.name}`,
+            `/ipfs/${rootCid}`,
+          );
+          repinned += 1;
+        }
+        for (const stale of mine.filter((p) => p.cid !== rootCid)) {
+          await this.deps.cluster
+            .unpin(stale.cid)
+            .catch((err) => this.log(`reconcile unpin ${stale.cid}: ${err}`));
+          cleaned += 1;
+        }
+      });
+    }
+
+    const names = new Set(dirs.map((d) => d.name));
+    for (const pin of pins) {
+      const folder = pin.metadata[FOLDER_META_KEY];
+      if (folder && !names.has(folder)) {
+        await this.deps.cluster
+          .unpin(pin.cid)
+          .catch((err) =>
+            this.log(`reconcile orphan unpin ${pin.cid}: ${err}`),
+          );
+        cleaned += 1;
+      }
+    }
+    return { repinned, cleaned };
+  }
 }
