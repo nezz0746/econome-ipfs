@@ -12,7 +12,15 @@ import {
 } from "@repo/db";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { getEnrichedPeers, ingest } from "@/lib/api";
+import {
+  createFolder,
+  deleteFolder,
+  deleteFolderPath,
+  getEnrichedPeers,
+  ingest,
+  ingestCreateFolder,
+  ingestFolderFile,
+} from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { parseTags } from "@/lib/tags";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/upload-config";
@@ -135,6 +143,90 @@ export async function testUpload(formData: FormData): Promise<UploadResult> {
   } catch (err) {
     return {
       name,
+      error: err instanceof Error ? err.message : "upload failed",
+    };
+  }
+}
+
+// ----- Folders -------------------------------------------------------------
+
+export async function createFolderAction(formData: FormData): Promise<void> {
+  await requireUserId();
+  const name = String(formData.get("name") ?? "").trim();
+  const tags = parseTags(formData.get("tags"));
+  if (tags === null) throw new Error("invalid tags");
+  await createFolder(name, tags);
+  revalidatePath("/dashboard/folders");
+}
+
+export async function deleteFolderAction(formData: FormData): Promise<void> {
+  await requireUserId();
+  await deleteFolder(String(formData.get("name") ?? ""));
+  revalidatePath("/dashboard/folders");
+}
+
+export async function deleteFolderEntryAction(
+  formData: FormData,
+): Promise<void> {
+  await requireUserId();
+  const name = String(formData.get("name") ?? "");
+  await deleteFolderPath(name, String(formData.get("path") ?? ""));
+  revalidatePath(`/dashboard/folders/${encodeURIComponent(name)}`);
+}
+
+export interface FolderUploadResult {
+  path: string;
+  ok: boolean;
+  error?: string;
+  rootCid?: string | null;
+}
+
+/** Create-or-reuse the target folder before a folder-mode test upload. */
+export async function ensureFolder(
+  formData: FormData,
+): Promise<{ ok: boolean; error?: string }> {
+  await requireUserId();
+  const apiKey = String(formData.get("apiKey") ?? "");
+  const folder = String(formData.get("folder") ?? "").trim();
+  const tags = parseTags(formData.get("tags"));
+  if (!apiKey) return { ok: false, error: "API key required" };
+  if (tags === null) return { ok: false, error: "Invalid tags" };
+  try {
+    await ingestCreateFolder(apiKey, folder, tags);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "failed" };
+  }
+}
+
+/**
+ * Upload one file of a folder-mode batch. The client sends one request per
+ * file (each within the server-action body budget) with commit=false on all
+ * but the last, so the batch commits as a single folder version.
+ */
+export async function uploadFolderFile(
+  formData: FormData,
+): Promise<FolderUploadResult> {
+  await requireUserId();
+  const apiKey = String(formData.get("apiKey") ?? "");
+  const folder = String(formData.get("folder") ?? "").trim();
+  const path = String(formData.get("path") ?? "");
+  const commit = String(formData.get("commit") ?? "true") === "true";
+  const file = formData.get("file");
+  if (!apiKey) return { path, ok: false, error: "API key required" };
+  if (!(file instanceof File) || file.size === 0) {
+    return { path, ok: false, error: "Empty file" };
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return { path, ok: false, error: `Too large (max ${MAX_UPLOAD_MB} MB)` };
+  }
+  try {
+    const res = await ingestFolderFile(apiKey, folder, file, path, commit);
+    return { path, ok: true, rootCid: res.rootCid };
+  } catch (err) {
+    return {
+      path,
+      ok: false,
       error: err instanceof Error ? err.message : "upload failed",
     };
   }
