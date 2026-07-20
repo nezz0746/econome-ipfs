@@ -324,3 +324,45 @@ export async function ingestFolderFile(
   const body = (await res.json()) as { rootCid: string | null };
   return { rootCid: body.rootCid };
 }
+
+/**
+ * Upload one file into a folder through the internal (session-gated BFF)
+ * mount — no API key. Multipart, so it gets its own fetch: gatewayMutate
+ * assumes JSON bodies. Chunked-batch protocol: callers pass commit=false
+ * for all but the final file so the batch lands as one folder version.
+ */
+export async function uploadFolderFileInternal(
+  name: string,
+  file: File,
+  path: string,
+  commit: boolean,
+): Promise<{ rootCid: string | null }> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  form.append("path", path);
+  const res = await fetch(
+    `${HONO_URL}/cluster/folders/${encodeURIComponent(name)}/files?commit=${commit}`,
+    {
+      method: "POST",
+      headers: { "x-internal-token": INTERNAL_TOKEN },
+      body: form,
+      cache: "no-store",
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Folder upload failed: ${res.status} ${await res.text()}`);
+  }
+  const body = (await res.json()) as { rootCid: string | null };
+  return { rootCid: body.rootCid };
+}
+
+/** Mount existing CIDs into a folder via the internal mount. */
+export function addFolderCids(
+  name: string,
+  entries: { cid: string; path: string }[],
+): Promise<{ rootCid: string }> {
+  return gatewayMutate<{ rootCid: string }>(
+    `/folders/${encodeURIComponent(name)}/cids`,
+    { method: "POST", body: JSON.stringify({ entries }) },
+  );
+}

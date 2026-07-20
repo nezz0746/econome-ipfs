@@ -13,6 +13,7 @@ import {
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import {
+  addFolderCids,
   createFolder,
   deleteFolder,
   deleteFolderPath,
@@ -21,6 +22,7 @@ import {
   ingestCreateFolder,
   ingestFolderFile,
   ingestSetFolderTags,
+  uploadFolderFileInternal,
 } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { parseTags } from "@/lib/tags";
@@ -239,6 +241,62 @@ export async function uploadFolderFile(
       path,
       ok: false,
       error: err instanceof Error ? err.message : "upload failed",
+    };
+  }
+}
+
+/**
+ * Upload one file of a folder-detail batch through the internal mount (no
+ * API key — gated on the dashboard session). One request per file so each
+ * stays under the server-action body budget; callers send commit=false on
+ * all but the last file.
+ */
+export async function uploadFolderEntry(
+  formData: FormData,
+): Promise<FolderUploadResult> {
+  await requireUserId();
+  const name = String(formData.get("name") ?? "");
+  const path = String(formData.get("path") ?? "");
+  const commit = String(formData.get("commit") ?? "true") === "true";
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { path, ok: false, error: "Empty file" };
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return { path, ok: false, error: `Too large (max ${MAX_UPLOAD_MB} MB)` };
+  }
+  try {
+    const res = await uploadFolderFileInternal(name, file, path, commit);
+    if (commit) {
+      revalidatePath(`/dashboard/folders/${encodeURIComponent(name)}`);
+    }
+    return { path, ok: true, rootCid: res.rootCid };
+  } catch (err) {
+    return {
+      path,
+      ok: false,
+      error: err instanceof Error ? err.message : "upload failed",
+    };
+  }
+}
+
+/** Mount an existing CID into a folder at the given relative path. */
+export async function addCidToFolderAction(
+  formData: FormData,
+): Promise<{ ok: boolean; error?: string }> {
+  await requireUserId();
+  const name = String(formData.get("name") ?? "");
+  const cid = String(formData.get("cid") ?? "").trim();
+  const path = String(formData.get("path") ?? "").trim();
+  if (!cid || !path) return { ok: false, error: "CID and name required" };
+  try {
+    await addFolderCids(name, [{ cid, path }]);
+    revalidatePath(`/dashboard/folders/${encodeURIComponent(name)}`);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "add failed",
     };
   }
 }
