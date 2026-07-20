@@ -20,6 +20,7 @@ import {
   ingest,
   ingestCreateFolder,
   ingestFolderFile,
+  ingestSetFolderTags,
 } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { parseTags } from "@/lib/tags";
@@ -181,7 +182,14 @@ export interface FolderUploadResult {
   rootCid?: string | null;
 }
 
-/** Create-or-reuse the target folder before a folder-mode test upload. */
+/**
+ * Create-or-reuse the target folder before a folder-mode test upload. When
+ * the folder already exists, `create()` on the service is non-destructive
+ * and won't re-pin, so typed tags would otherwise be silently ignored —
+ * explicitly set them here whenever the field is non-empty. An empty tags
+ * field makes no call, so uploading to an already-tagged folder never
+ * clears its tags.
+ */
 export async function ensureFolder(
   formData: FormData,
 ): Promise<{ ok: boolean; error?: string }> {
@@ -193,6 +201,9 @@ export async function ensureFolder(
   if (tags === null) return { ok: false, error: "Invalid tags" };
   try {
     await ingestCreateFolder(apiKey, folder, tags);
+    if (tags.length > 0) {
+      await ingestSetFolderTags(apiKey, folder, tags);
+    }
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "failed" };

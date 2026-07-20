@@ -76,57 +76,59 @@ export default function UploadPage() {
     setResults([]);
     setFolderResults([]);
 
-    if (mode === "individual") {
-      // One request per file so each file gets its own body-size budget.
-      const settled = await Promise.all(
-        toUpload.map((file) => {
+    try {
+      if (mode === "individual") {
+        // One request per file so each file gets its own body-size budget.
+        const settled = await Promise.all(
+          toUpload.map((file) => {
+            const fd = new FormData();
+            fd.append("apiKey", apiKey);
+            fd.append("tags", tags);
+            fd.append("file", file, file.name);
+            return testUpload(fd);
+          }),
+        );
+        setResults(settled);
+        const ok = settled.filter((r) => r.cid).length;
+        if (ok > 0) toast.success(`Pinned ${ok} file(s) across the cluster`);
+        if (settled.length - ok > 0)
+          toast.error(`${settled.length - ok} file(s) failed`);
+      } else {
+        // Folder mode: create-or-reuse the folder, then upload sequentially —
+        // commit=false on all but the last file so the batch lands as ONE new
+        // folder version (one pin + one IPNS update).
+        const create = new FormData();
+        create.append("apiKey", apiKey);
+        create.append("folder", folder);
+        create.append("tags", tags);
+        const created = await ensureFolder(create);
+        if (!created.ok) {
+          toast.error(created.error ?? "Folder create failed");
+          return;
+        }
+        const settled: FolderUploadResult[] = [];
+        for (const [i, file] of toUpload.entries()) {
           const fd = new FormData();
           fd.append("apiKey", apiKey);
-          fd.append("tags", tags);
+          fd.append("folder", folder);
+          fd.append("path", relPath(file));
+          fd.append("commit", i === toUpload.length - 1 ? "true" : "false");
           fd.append("file", file, file.name);
-          return testUpload(fd);
-        }),
-      );
-      setResults(settled);
-      const ok = settled.filter((r) => r.cid).length;
-      if (ok > 0) toast.success(`Pinned ${ok} file(s) across the cluster`);
-      if (settled.length - ok > 0)
-        toast.error(`${settled.length - ok} file(s) failed`);
-    } else {
-      // Folder mode: create-or-reuse the folder, then upload sequentially —
-      // commit=false on all but the last file so the batch lands as ONE new
-      // folder version (one pin + one IPNS update).
-      const create = new FormData();
-      create.append("apiKey", apiKey);
-      create.append("folder", folder);
-      create.append("tags", tags);
-      const created = await ensureFolder(create);
-      if (!created.ok) {
-        setPending(false);
-        toast.error(created.error ?? "Folder create failed");
-        return;
+          settled.push(await uploadFolderFile(fd));
+        }
+        setFolderResults(settled);
+        const ok = settled.filter((r) => r.ok).length;
+        const root = settled[settled.length - 1]?.rootCid;
+        if (ok > 0)
+          toast.success(
+            `Added ${ok} file(s) to '${folder}'${root ? ` — new root ${root}` : ""}`,
+          );
+        if (settled.length - ok > 0)
+          toast.error(`${settled.length - ok} file(s) failed`);
       }
-      const settled: FolderUploadResult[] = [];
-      for (const [i, file] of toUpload.entries()) {
-        const fd = new FormData();
-        fd.append("apiKey", apiKey);
-        fd.append("folder", folder);
-        fd.append("path", relPath(file));
-        fd.append("commit", i === toUpload.length - 1 ? "true" : "false");
-        fd.append("file", file, file.name);
-        settled.push(await uploadFolderFile(fd));
-      }
-      setFolderResults(settled);
-      const ok = settled.filter((r) => r.ok).length;
-      const root = settled[settled.length - 1]?.rootCid;
-      if (ok > 0)
-        toast.success(
-          `Added ${ok} file(s) to '${folder}'${root ? ` — new root ${root}` : ""}`,
-        );
-      if (settled.length - ok > 0)
-        toast.error(`${settled.length - ok} file(s) failed`);
+    } finally {
+      setPending(false);
     }
-    setPending(false);
   }
 
   return (

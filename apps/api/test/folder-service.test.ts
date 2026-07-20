@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PinInfo } from "../src/cluster-client";
 import {
+  FOLDER_MARKER,
   FolderService,
   isValidFolderName,
   isValidRelPath,
@@ -92,11 +93,20 @@ describe("validation", () => {
     expect(isValidRelPath("a//b")).toBe(false);
     expect(isValidRelPath("a\\b")).toBe(false);
   });
+
+  it("rejects the reserved .econome marker as a first path segment", () => {
+    expect(isValidRelPath(".econome")).toBe(false);
+    expect(isValidRelPath(".econome/x")).toBe(false);
+  });
 });
 
 describe("create", () => {
-  it("mkdirs, generates the key, pins the root, publishes", async () => {
-    const { service, ops } = makeFakes();
+  it("mkdirs, generates the key, writes the marker, pins the root, publishes", async () => {
+    const { service, kubo, ops } = makeFakes();
+    // Marker missing (fresh folder): filesStat rejects once for the check.
+    (kubo.filesStat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("kubo files/stat failed: 500 file does not exist"),
+    );
     const res = await service.create("docs", ["photos"]);
     expect(res).toEqual({
       name: "docs",
@@ -106,10 +116,18 @@ describe("create", () => {
     expect(ops).toEqual([
       "mkdir:/econome/docs",
       "keygen:econome-folder-docs",
+      "cp:/ipfs/bafyfile->/econome/docs/.econome",
       "flush",
       "pin:bafyroot",
       "publish:econome-folder-docs:/ipfs/bafyroot",
     ]);
+  });
+
+  it("skips writing the marker when it already exists (idempotent re-create)", async () => {
+    const { service, ops } = makeFakes();
+    // Default filesStat resolves — marker already there.
+    await service.create("docs", ["photos"]);
+    expect(ops).not.toContain("cp:/ipfs/bafyfile->/econome/docs/.econome");
   });
 
   it("is idempotent when the key already exists", async () => {
@@ -198,6 +216,20 @@ describe("list / get", () => {
       entries: [{ name: "a.txt", type: "file", size: 11, cid: "bafyfile" }],
     });
     expect(kubo.filesLs).toHaveBeenCalledWith("/econome/docs/sub");
+  });
+
+  it("filters the .econome marker out of entries", async () => {
+    const { service, kubo } = makeFakes({
+      pins: [folderPin({ cid: "bafyroot" })],
+    });
+    (kubo.filesLs as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { name: FOLDER_MARKER, type: "file", size: 4, cid: "bafymarker" },
+      { name: "a.txt", type: "file", size: 11, cid: "bafyfile" },
+    ]);
+    const detail = await service.get("docs");
+    expect(detail?.entries).toEqual([
+      { name: "a.txt", type: "file", size: 11, cid: "bafyfile" },
+    ]);
   });
 
   it("returns null for a missing folder", async () => {
@@ -376,14 +408,53 @@ describe("reconcile", () => {
     expect(kubo.namePublish).not.toHaveBeenCalled();
   });
 
+  it("republishes IPNS to heal drift when a stale pin sits alongside the current root (crash between pin and publish)", async () => {
+    const { service, cluster, kubo, ops } = makeFakes({
+      pins: [folderPin({ cid: "bafyroot" }), folderPin({ cid: "bafyold" })],
+      root: "bafyroot",
+    });
+    (kubo.filesLs as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { name: "docs", type: "dir", size: 0, cid: "bafyroot" },
+    ]);
+    const res = await service.reconcile();
+    expect(res).toEqual({ repinned: 0, cleaned: 1 });
+    expect(cluster.pinByCid).not.toHaveBeenCalled();
+    expect(kubo.namePublish).toHaveBeenCalledWith(
+      "econome-folder-docs",
+      "/ipfs/bafyroot",
+    );
+    expect(ops).toContain("unpin:bafyold");
+    expect(
+      ops.indexOf("publish:econome-folder-docs:/ipfs/bafyroot"),
+    ).toBeLessThan(ops.indexOf("unpin:bafyold"));
+  });
+
   it("unpins orphan folder pins whose MFS dir is gone (MFS wins)", async () => {
     const { service, ops, kubo } = makeFakes({
       pins: [folderPin({ cid: "bafyghost", metadata: { folder: "ghost" } })],
     });
     (kubo.filesLs as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    // The orphan-race guard re-checks with filesStat right before unpinning;
+    // reject not-found so the ghost folder is confirmed truly gone.
+    (kubo.filesStat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("kubo files/stat failed: 500 file does not exist"),
+    );
     const res = await service.reconcile();
     expect(res).toEqual({ repinned: 0, cleaned: 1 });
     expect(ops).toContain("unpin:bafyghost");
+  });
+
+  it("does NOT unpin an orphan candidate whose folder exists again (created mid-sweep)", async () => {
+    const { service, ops, cluster, kubo } = makeFakes({
+      pins: [folderPin({ cid: "bafyghost", metadata: { folder: "ghost" } })],
+    });
+    (kubo.filesLs as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    // Default filesStat fake resolves — simulates the folder having been
+    // created again (or found) between the dirs listing and the unpin.
+    const res = await service.reconcile();
+    expect(res).toEqual({ repinned: 0, cleaned: 0 });
+    expect(cluster.unpin).not.toHaveBeenCalled();
+    expect(ops).not.toContain("unpin:bafyghost");
   });
 
   it("survives an empty MFS (no /econome yet)", async () => {
@@ -403,6 +474,9 @@ describe("reconcile", () => {
     ]);
     (kubo.filesFlush as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("kubo files/flush failed: 500 boom"),
+    );
+    (kubo.filesStat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("kubo files/stat failed: 500 file does not exist"),
     );
     const res = await service.reconcile();
     expect(res).toEqual({ repinned: 0, cleaned: 1 });

@@ -8,6 +8,15 @@
  * root -> publish IPNS -> unpin stale roots. The new root is pinned before
  * old roots are released, so content is never unprotected. Mutations are
  * serialized per folder to prevent root races.
+ *
+ * Every folder root also carries a `.econome` marker file (content = the
+ * folder name) so two folders with identical content (e.g. two empty
+ * folders) never flush to the same root CID — cluster pins are keyed by
+ * CID, so a collision would make the second pin overwrite the first
+ * folder's metadata (tags + folder key lost).
+ *
+ * The per-folder queue (`queues`) is in-process: the design assumes a
+ * single API instance.
  */
 
 import type { ClusterClient, PinInfo, PinOptions } from "./cluster-client";
@@ -22,6 +31,11 @@ import {
 export const FOLDER_META_KEY = "folder";
 export const FOLDER_ROOT = "/econome";
 export const KEY_PREFIX = "econome-folder-";
+/**
+ * Root-uniqueness marker: written into every folder as `<root>/.econome`
+ * with the folder name as its content. Reserved — never user-writable.
+ */
+export const FOLDER_MARKER = ".econome";
 
 const FOLDER_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -34,6 +48,7 @@ export function isValidRelPath(path: string): boolean {
   if (path.length === 0 || path.length > 1024) return false;
   if (path.includes("\\")) return false;
   const segments = path.split("/");
+  if (segments[0] === FOLDER_MARKER) return false;
   return segments.every((s) => s.length > 0 && s !== "." && s !== "..");
 }
 
@@ -165,9 +180,31 @@ export class FolderService {
         if (!existing) throw err;
         ipnsName = existing.id;
       }
+      await this.ensureMarker(name);
       const rootCid = await this.commit(name, tags);
       return { name, rootCid, ipnsName };
     });
+  }
+
+  /**
+   * Write the `.econome` marker (content = folder name) if it isn't already
+   * there. Its content is what makes every folder's root CID unique — two
+   * folders with identical content would otherwise flush to the same CID.
+   * `filesCp` to an existing path errors in kubo, so this checks first.
+   */
+  private async ensureMarker(name: string): Promise<void> {
+    const markerPath = this.mfsPath(name, FOLDER_MARKER);
+    try {
+      await this.deps.kubo.filesStat(markerPath);
+      return; // already there
+    } catch (err) {
+      if (!notFound(err)) throw err;
+    }
+    const markerCid = await this.deps.kubo.addFile(
+      new Blob([name]),
+      FOLDER_MARKER,
+    );
+    await this.deps.kubo.filesCp(`/ipfs/${markerCid}`, markerPath);
   }
 
   async list(): Promise<FolderSummary[]> {
@@ -208,7 +245,9 @@ export class FolderService {
     let entries: MfsEntry[];
     try {
       stat = await this.deps.kubo.filesStat(this.mfsPath(name));
-      entries = await this.deps.kubo.filesLs(this.mfsPath(name, path));
+      entries = (await this.deps.kubo.filesLs(this.mfsPath(name, path))).filter(
+        (e) => e.name !== FOLDER_MARKER,
+      );
     } catch (err) {
       if (notFound(err)) return null;
       throw err;
@@ -392,7 +431,9 @@ export class FolderService {
             this.mfsPath(dir.name),
           );
           const mine = this.folderPins(pins, dir.name);
-          if (!mine.some((p) => p.cid === rootCid)) {
+          const drifted = !mine.some((p) => p.cid === rootCid);
+          const stale = mine.filter((p) => p.cid !== rootCid);
+          if (drifted) {
             const tags = mine[0]
               ? (parseTags(mine[0].metadata[TAGS_META_KEY]) ?? [])
               : [];
@@ -400,16 +441,23 @@ export class FolderService {
               rootCid,
               await this.pinOptions(dir.name, tags),
             );
+            repinned += 1;
+          }
+          // Publish whenever the IPNS record might be stale — not just on a
+          // drifted root: a crash between pin and publish leaves the stale
+          // pins present but IPNS already pointing elsewhere, or the record
+          // never updated. Publish BEFORE releasing the stale pins so the
+          // name never points at content about to be unpinned.
+          if (drifted || stale.length > 0) {
             await this.deps.kubo.namePublish(
               `${KEY_PREFIX}${dir.name}`,
               `/ipfs/${rootCid}`,
             );
-            repinned += 1;
           }
-          for (const stale of mine.filter((p) => p.cid !== rootCid)) {
+          for (const s of stale) {
             await this.deps.cluster
-              .unpin(stale.cid)
-              .catch((err) => this.log(`reconcile unpin ${stale.cid}: ${err}`));
+              .unpin(s.cid)
+              .catch((err) => this.log(`reconcile unpin ${s.cid}: ${err}`));
             cleaned += 1;
           }
         });
@@ -421,14 +469,23 @@ export class FolderService {
     const names = new Set(dirs.map((d) => d.name));
     for (const pin of pins) {
       const folder = pin.metadata[FOLDER_META_KEY];
-      if (folder && !names.has(folder)) {
-        await this.deps.cluster
-          .unpin(pin.cid)
-          .catch((err) =>
-            this.log(`reconcile orphan unpin ${pin.cid}: ${err}`),
-          );
-        cleaned += 1;
+      if (!folder || names.has(folder)) continue;
+      // The `dirs` listing was taken at sweep start; a folder created
+      // mid-sweep won't be in it yet. Re-check right before unpinning so we
+      // never release a root a concurrent create() just pinned.
+      try {
+        await this.deps.kubo.filesStat(this.mfsPath(folder));
+        continue; // folder exists now — not actually orphaned
+      } catch (err) {
+        if (!notFound(err)) {
+          this.log(`reconcile orphan check ${folder} failed: ${err}`);
+          continue;
+        }
       }
+      await this.deps.cluster
+        .unpin(pin.cid)
+        .catch((err) => this.log(`reconcile orphan unpin ${pin.cid}: ${err}`));
+      cleaned += 1;
     }
     return { repinned, cleaned };
   }

@@ -276,6 +276,30 @@ export async function ingestCreateFolder(
 }
 
 /**
+ * Set an existing folder's tags through the machine (API-key) ingest path.
+ * Used so a folder-mode upload's tags field applies even when the folder
+ * already exists — `create()` on the service is non-destructive and skips
+ * re-pinning (so it never silently applies typed tags) for an existing
+ * folder, so uploads must call this explicitly.
+ */
+export async function ingestSetFolderTags(
+  apiKey: string,
+  name: string,
+  tags: string[],
+): Promise<void> {
+  const res = await fetch(`${HONO_URL}/folders/${encodeURIComponent(name)}`, {
+    method: "PATCH",
+    headers: { "x-api-key": apiKey, "content-type": "application/json" },
+    body: JSON.stringify({ tags }),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Folder tag update failed: ${res.status} ${await res.text()}`,
+    );
+  }
+}
+
+/**
  * Upload one file into a folder through the API-key path. Chunked-batch
  * protocol: callers pass commit=false for all but the final file so the
  * whole batch lands as one folder version (one pin + one IPNS publish).
