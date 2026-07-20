@@ -697,6 +697,7 @@ describe("docs endpoints", () => {
     const res = await createApp(makeDeps()).request("/docs");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type") ?? "").toContain("text/html");
+    expect(await res.text()).toContain("@scalar/api-reference@");
   });
 
   it("documents every ingest route with ApiKeyAuth", async () => {

@@ -513,5 +513,13 @@ export function mountDocs<E extends Env>(app: Hono<E>): void {
     }),
   );
 
-  app.get("/docs", Scalar({ url: "/openapi.json" }));
+  app.get(
+    "/docs",
+    Scalar({
+      url: "/openapi.json",
+      // Pin the UI bundle: this page handles live API keys, so we don't
+      // auto-track the CDN's latest release.
+      cdn: "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.62.9",
+    }),
+  );
 }
