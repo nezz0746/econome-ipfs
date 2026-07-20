@@ -6,6 +6,7 @@ import {
   parseTags,
   planReallocations,
   type TagSubscription,
+  tagPinOptions,
 } from "../src/tags";
 
 describe("parseTags", () => {
@@ -91,7 +92,13 @@ describe("planReallocations", () => {
       }),
     ];
     expect(planReallocations(pins, subs, "main", allOnline)).toEqual([
-      { cid: "c1", name: "one", tags: [], allocations: ["main"] },
+      {
+        cid: "c1",
+        name: "one",
+        tags: [],
+        allocations: ["main"],
+        metadata: {},
+      },
     ]);
   });
 
@@ -110,6 +117,7 @@ describe("planReallocations", () => {
         name: "one",
         tags: ["photos"],
         allocations: ["main", "peer-b", "peer-c"],
+        metadata: { tags: "photos" },
       },
     ]);
   });
@@ -135,6 +143,7 @@ describe("planReallocations", () => {
         name: "one",
         tags: ["videos"],
         allocations: ["main", "peer-c"],
+        metadata: { tags: "videos" },
       },
     ]);
   });
@@ -158,5 +167,51 @@ describe("planReallocations", () => {
       }),
     ];
     expect(planReallocations(pins, subs, "main", allOnline)).toEqual([]);
+  });
+});
+
+describe("tagPinOptions", () => {
+  const subs = [
+    { peerId: "peer-b", subscribedTags: ["photos"] },
+    { peerId: "peer-c", subscribedTags: ["videos"] },
+  ];
+
+  it("pins untagged content to the main peer only, no metadata", () => {
+    expect(tagPinOptions([], "peer-a", subs)).toEqual({
+      replicationMin: 1,
+      replicationMax: 1,
+      userAllocations: ["peer-a"],
+    });
+  });
+
+  it("allocates tagged content to main + subscribers with tags metadata", () => {
+    expect(tagPinOptions(["photos"], "peer-a", subs)).toEqual({
+      replicationMin: 1,
+      replicationMax: 2,
+      userAllocations: ["peer-a", "peer-b"],
+      metadata: { tags: "photos" },
+    });
+  });
+});
+
+describe("planReallocations metadata carry-over", () => {
+  it("returns the pin's full metadata so re-pins preserve extra keys", () => {
+    const pins = [
+      {
+        cid: "bafyfolder",
+        name: "folder:docs",
+        allocations: ["peer-a"],
+        replicationFactorMin: 1,
+        replicationFactorMax: 1,
+        metadata: { tags: "photos", folder: "docs" },
+      },
+    ];
+    const actions = planReallocations(
+      pins,
+      [{ peerId: "peer-b", subscribedTags: ["photos"] }],
+      "peer-a",
+      new Set(["peer-a", "peer-b"]),
+    );
+    expect(actions[0]?.metadata).toEqual({ tags: "photos", folder: "docs" });
   });
 });

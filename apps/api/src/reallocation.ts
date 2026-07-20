@@ -1,5 +1,5 @@
 import type { ClusterClient } from "./cluster-client";
-import { planReallocations, TAGS_META_KEY, type TagSubscription } from "./tags";
+import { planReallocations, type TagSubscription } from "./tags";
 
 export interface ReallocationDeps {
   cluster: ClusterClient;
@@ -33,8 +33,10 @@ export async function runReallocationJob(
         replicationMax: action.allocations.length,
         userAllocations: action.allocations,
         name: action.name || undefined,
-        ...(action.tags.length > 0 && {
-          metadata: { [TAGS_META_KEY]: action.tags.join(",") },
+        // Preserve the pin's metadata verbatim: besides `tags`, folder pins
+        // carry a `folder` key that commit/reconcile use to find them.
+        ...(Object.keys(action.metadata).length > 0 && {
+          metadata: action.metadata,
         }),
       });
       repinned += 1;

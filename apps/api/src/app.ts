@@ -7,12 +7,7 @@ import { importCidFromGateway } from "./car-import";
 import type { ClusterClient, PinOptions } from "./cluster-client";
 import type { PeerService } from "./peer-service";
 import { summarizePinProgress } from "./pin-progress";
-import {
-  desiredAllocations,
-  parseTags,
-  TAGS_META_KEY,
-  type TagSubscription,
-} from "./tags";
+import { parseTags, type TagSubscription, tagPinOptions } from "./tags";
 
 export interface RecordedUpload {
   cid: string;
@@ -95,19 +90,11 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
    * metadata so the reallocation job can reconcile it later.
    */
   async function pinOptionsForTags(tags: string[]): Promise<PinOptions> {
-    const main = await getMainPeerId();
-    const allocations =
-      tags.length === 0
-        ? [main]
-        : desiredAllocations(tags, main, await deps.listTagSubscriptions());
-    return {
-      replicationMin: 1,
-      replicationMax: allocations.length,
-      userAllocations: allocations,
-      ...(tags.length > 0 && {
-        metadata: { [TAGS_META_KEY]: tags.join(",") },
-      }),
-    };
+    return tagPinOptions(
+      tags,
+      await getMainPeerId(),
+      await deps.listTagSubscriptions(),
+    );
   }
 
   app.get("/health", (c) => c.json({ ok: true }));

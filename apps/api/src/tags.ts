@@ -1,4 +1,4 @@
-import type { PinInfo } from "./cluster-client";
+import type { PinInfo, PinOptions } from "./cluster-client";
 
 /**
  * Tag-based partial replication (pure helpers).
@@ -64,6 +64,30 @@ export function desiredAllocations(
   return allocations;
 }
 
+/**
+ * Pin options for content with the given tags. Replication is opt-in:
+ * untagged content pins to the main peer only; tagged content is allocated
+ * to the main peer + subscribers and carries its tags in pin metadata.
+ */
+export function tagPinOptions(
+  tags: string[],
+  mainPeerId: string,
+  subscriptions: TagSubscription[],
+): PinOptions {
+  const allocations =
+    tags.length === 0
+      ? [mainPeerId]
+      : desiredAllocations(tags, mainPeerId, subscriptions);
+  return {
+    replicationMin: 1,
+    replicationMax: allocations.length,
+    userAllocations: allocations,
+    ...(tags.length > 0 && {
+      metadata: { [TAGS_META_KEY]: tags.join(",") },
+    }),
+  };
+}
+
 /** Tags carried by a pin's cluster metadata, or null when untagged. */
 export function pinTags(pin: PinInfo): string[] | null {
   const raw = pin.metadata[TAGS_META_KEY];
@@ -77,6 +101,8 @@ export interface RepinAction {
   name: string;
   tags: string[];
   allocations: string[];
+  /** The pin's full existing metadata, carried verbatim into the re-pin. */
+  metadata: Record<string, string>;
 }
 
 /**
@@ -121,6 +147,7 @@ export function planReallocations(
         name: pin.name,
         tags,
         allocations: desired,
+        metadata: pin.metadata,
       });
     }
   }
