@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BookOpen,
   Files,
   FolderOpen,
   KeyRound,
@@ -45,8 +46,10 @@ function isActive(pathname: string, url: string): boolean {
 
 export function AppSidebar({
   user,
+  apiDocsUrl,
 }: {
   user: { name?: string; email: string };
+  apiDocsUrl: string | null;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -122,6 +125,21 @@ export function AppSidebar({
       </SidebarContent>
 
       <SidebarFooter>
+        {apiDocsUrl ? (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                render={
+                  <a href={apiDocsUrl} target="_blank" rel="noreferrer" />
+                }
+                tooltip="API Docs"
+              >
+                <BookOpen />
+                <span>API Docs</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        ) : null}
         <NavUser user={user} />
       </SidebarFooter>
       <SidebarRail />

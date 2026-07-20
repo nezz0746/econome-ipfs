@@ -90,7 +90,7 @@ services:
       IPFS_GATEWAY_URL: ${IPFS_GATEWAY_URL:-http://localhost:8081}
       # Browser-reachable API base for dashboard docs links. Leave empty
       # until the api service has a public domain — empty hides the links.
-      API_PUBLIC_URL: ${API_PUBLIC_URL:-}
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-https://ipfs-api.econome.studio}
       CLUSTER_NAME: ${CLUSTER_NAME:-econome}
       CLUSTER_SECRET: ${CLUSTER_SECRET:?set CLUSTER_SECRET}
       CLUSTER_BOOTSTRAP: ${CLUSTER_BOOTSTRAP:-}
