@@ -7,6 +7,7 @@ import { importCidFromGateway } from "./car-import";
 import type { ClusterClient, PinOptions } from "./cluster-client";
 import { createFolderRoutes } from "./folder-routes";
 import type { FolderService } from "./folder-service";
+import { mountDocs } from "./openapi";
 import type { PeerService } from "./peer-service";
 import { summarizePinProgress } from "./pin-progress";
 import { parseTags, type TagSubscription, tagPinOptions } from "./tags";
@@ -75,6 +76,9 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
 
   app.use("*", logger());
   app.use("*", cors());
+
+  // Public API docs (spec + Scalar UI) — mounted before any auth middleware.
+  mountDocs(app);
 
   // The cluster peer id is static for the process; resolve it once, lazily,
   // and retry on failure rather than caching a rejection.

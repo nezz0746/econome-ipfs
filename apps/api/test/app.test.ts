@@ -669,3 +669,33 @@ describe("folder routes", () => {
     expect(deps.folders.remove).toHaveBeenCalledWith("docs");
   });
 });
+
+describe("docs endpoints", () => {
+  it("serves the OpenAPI 3.1 spec publicly with the ApiKeyAuth scheme", async () => {
+    const res = await createApp(makeDeps()).request("/openapi.json");
+    expect(res.status).toBe(200);
+    const spec = (await res.json()) as {
+      openapi: string;
+      info: { title: string };
+      components?: { securitySchemes?: Record<string, unknown> };
+      paths?: Record<string, unknown>;
+    };
+    expect(spec.openapi).toMatch(/^3\.1/);
+    expect(spec.info.title).toBe("Econome Storage API");
+    expect(spec.components?.securitySchemes?.ApiKeyAuth).toMatchObject({
+      type: "apiKey",
+      in: "header",
+      name: "x-api-key",
+    });
+    // Internal gateway is never documented.
+    for (const path of Object.keys(spec.paths ?? {})) {
+      expect(path.startsWith("/cluster")).toBe(false);
+    }
+  });
+
+  it("serves the Scalar UI publicly", async () => {
+    const res = await createApp(makeDeps()).request("/docs");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type") ?? "").toContain("text/html");
+  });
+});
