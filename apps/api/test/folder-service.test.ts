@@ -475,11 +475,46 @@ describe("reconcile", () => {
     (kubo.filesFlush as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("kubo files/flush failed: 500 boom"),
     );
-    (kubo.filesStat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error("kubo files/stat failed: 500 file does not exist"),
+    // reconcile's per-folder step now stats the marker path first
+    // (ensureMarker) before flushing, so filesStat is called for both
+    // "broken"'s marker AND the orphan re-check on "ghost" — key by path so
+    // only the orphan re-check (which must confirm truly gone) rejects.
+    (kubo.filesStat as ReturnType<typeof vi.fn>).mockImplementation(
+      async (path: string) => {
+        if (path === "/econome/ghost") {
+          throw new Error("kubo files/stat failed: 500 file does not exist");
+        }
+        return {
+          cid: "bafyroot",
+          size: 0,
+          cumulativeSize: 42,
+          type: "dir" as const,
+          blocks: 1,
+        };
+      },
     );
     const res = await service.reconcile();
     expect(res).toEqual({ repinned: 0, cleaned: 1 });
     expect(ops).toContain("unpin:bafyghost");
+  });
+
+  it("writes a missing marker for a folder found in MFS without one, before flushing", async () => {
+    const { service, ops, kubo } = makeFakes({
+      pins: [folderPin({ cid: "bafyroot" })],
+      root: "bafyroot",
+    });
+    (kubo.filesLs as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { name: "docs", type: "dir", size: 0, cid: "bafyroot" },
+    ]);
+    // Marker missing: filesStat rejects once for ensureMarker's check. No
+    // other filesStat call happens in this run (root matches the pin so
+    // there's no drift, and "docs" is present in MFS so the orphan sweep
+    // never re-stats it), so this reject can only land on the marker check.
+    (kubo.filesStat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("kubo files/stat failed: 500 file does not exist"),
+    );
+    const res = await service.reconcile();
+    expect(ops).toContain("cp:/ipfs/bafyfile->/econome/docs/.econome");
+    expect(res).toEqual({ repinned: 0, cleaned: 0 });
   });
 });

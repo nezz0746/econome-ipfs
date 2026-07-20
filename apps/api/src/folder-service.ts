@@ -405,10 +405,13 @@ export class FolderService {
   }
 
   /**
-   * Drift healing: MFS always wins. For each MFS folder, ensure the flushed
-   * root is the pinned+published one and stale roots are released; unpin
-   * folder pins whose MFS dir no longer exists (interrupted deletes). Covers
-   * every crash-mid-commit case; runs at boot and on the accounting tick.
+   * Drift healing: MFS always wins. For each MFS folder, ensure it has its
+   * `.econome` marker (heals folders left marker-less by out-of-band writes
+   * or a create() crashed between mkdir and marker write, closing the
+   * shared-root-CID collision path), then ensure the flushed root is the
+   * pinned+published one and stale roots are released; unpin folder pins
+   * whose MFS dir no longer exists (interrupted deletes). Covers every
+   * crash-mid-commit case; runs at boot and on the accounting tick.
    */
   async reconcile(): Promise<{ repinned: number; cleaned: number }> {
     let dirs: MfsEntry[];
@@ -427,6 +430,11 @@ export class FolderService {
     for (const dir of dirs) {
       try {
         await this.enqueue(dir.name, async () => {
+          // Heal folders that exist in MFS without a `.econome` marker
+          // (out-of-band writes, or a create() that crashed between mkdir
+          // and marker write) before flushing — otherwise a marker-less
+          // folder can flush to the same root CID as another and collide.
+          await this.ensureMarker(dir.name);
           const rootCid = await this.deps.kubo.filesFlush(
             this.mfsPath(dir.name),
           );
