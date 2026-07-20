@@ -765,5 +765,9 @@ describe("docs endpoints", () => {
     for (const path of Object.keys(spec.paths)) {
       expect(path.startsWith("/cluster")).toBe(false);
     }
+    const del = spec.paths["/folders/{name}"]?.delete as
+      | { responses?: Record<string, unknown> }
+      | undefined;
+    expect(del?.responses?.["400"]).toBeDefined();
   });
 });

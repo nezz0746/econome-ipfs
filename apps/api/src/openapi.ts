@@ -359,6 +359,7 @@ export const folderDocs = {
         description: "Deleted",
         content: jsonContent(z.object({ deleted: z.boolean() })),
       },
+      400: errorResponse("Invalid folder name"),
       401: errorResponse("Missing or invalid API key"),
     },
   }),
