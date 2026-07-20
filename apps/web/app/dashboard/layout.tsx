@@ -11,6 +11,13 @@ import {
 } from "@/components/ui/sidebar";
 import { auth } from "@/lib/auth";
 
+// Browser-reachable API base. Empty (e.g. prod before a domain is attached)
+// hides the sidebar docs link — never render a broken one.
+const API_PUBLIC_URL = (
+  process.env.API_PUBLIC_URL ?? "http://localhost:8080"
+).replace(/\/$/, "");
+const API_DOCS_URL = API_PUBLIC_URL ? `${API_PUBLIC_URL}/docs` : null;
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -24,6 +31,7 @@ export default async function DashboardLayout({
     <SidebarProvider>
       <AppSidebar
         user={{ name: session.user.name, email: session.user.email }}
+        apiDocsUrl={API_DOCS_URL}
       />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
