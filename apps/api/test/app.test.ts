@@ -736,4 +736,34 @@ describe("docs endpoints", () => {
       ],
     ).toBeDefined();
   });
+
+  it("documents every folder route once, under /folders only", async () => {
+    const res = await createApp(makeDeps()).request("/openapi.json");
+    const spec = (await res.json()) as {
+      paths: Record<
+        string,
+        Record<string, { security?: unknown; tags?: string[] }>
+      >;
+    };
+    const expects: [string, string][] = [
+      ["/folders", "post"],
+      ["/folders", "get"],
+      ["/folders/{name}", "get"],
+      ["/folders/{name}", "patch"],
+      ["/folders/{name}", "delete"],
+      ["/folders/{name}/files", "post"],
+      ["/folders/{name}/files", "delete"],
+      ["/folders/{name}/cids", "post"],
+      ["/folders/{name}/move", "post"],
+    ];
+    for (const [path, method] of expects) {
+      const op = spec.paths[path]?.[method];
+      expect(op, `${method.toUpperCase()} ${path}`).toBeDefined();
+      expect(op?.security).toEqual([{ ApiKeyAuth: [] }]);
+      expect(op?.tags).toEqual(["folders"]);
+    }
+    for (const path of Object.keys(spec.paths)) {
+      expect(path.startsWith("/cluster")).toBe(false);
+    }
+  });
 });
