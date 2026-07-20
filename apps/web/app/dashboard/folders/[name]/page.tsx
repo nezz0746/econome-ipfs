@@ -89,7 +89,11 @@ export default async function FolderDetailPage({
         })}
       </nav>
 
-      <FolderAddControls folderName={folder.name} currentPath={path} />
+      <FolderAddControls
+        folderName={folder.name}
+        currentPath={path}
+        existingNames={folder.entries.map((e) => e.name)}
+      />
 
       <Card>
         <CardContent>

@@ -19,9 +19,11 @@ import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/upload-config";
 export function FolderAddControls({
   folderName,
   currentPath,
+  existingNames,
 }: {
   folderName: string;
   currentPath: string;
+  existingNames: string[];
 }) {
   const router = useRouter();
   const [uploading, setUploading] = useState(false);
@@ -52,15 +54,25 @@ export function FolderAddControls({
     const toUpload = files.filter((f) => f.size <= MAX_UPLOAD_BYTES);
     if (toUpload.length === 0) return;
 
+    const existing = new Set(existingNames);
+    const dupes = toUpload.filter((f) => existing.has(f.name));
+    if (dupes.length > 0) {
+      toast.error(
+        `${dupes.length} file(s) already exist in this folder — rename or remove first`,
+      );
+    }
+    const fresh = toUpload.filter((f) => !existing.has(f.name));
+    if (fresh.length === 0) return;
+
     setUploading(true);
     try {
       let failed = 0;
       let committed = false;
-      for (const [i, file] of toUpload.entries()) {
+      for (const [i, file] of fresh.entries()) {
         const fd = new FormData();
         fd.append("name", folderName);
         fd.append("path", destPath(file.name));
-        const isLast = i === toUpload.length - 1;
+        const isLast = i === fresh.length - 1;
         fd.append("commit", isLast ? "true" : "false");
         fd.append("file", file, file.name);
         const res = await uploadFolderEntry(fd);
@@ -71,7 +83,7 @@ export function FolderAddControls({
           committed = true;
         }
       }
-      const ok = toUpload.length - failed;
+      const ok = fresh.length - failed;
       if (ok > 0 && committed) {
         toast.success(`Added ${ok} file(s) to '${folderName}'`);
         if (failed === 0 && fileInputRef.current) {
@@ -80,7 +92,7 @@ export function FolderAddControls({
         router.refresh();
       } else if (ok > 0 && !committed) {
         toast.warning(
-          `${ok} file(s) staged, but the new folder version couldn't be committed — it will finalize automatically within a minute`,
+          `${ok} file(s) staged, but the new folder version couldn't be committed — it will finalize automatically.`,
         );
       }
     } finally {
@@ -93,6 +105,10 @@ export function FolderAddControls({
     const form = e.currentTarget;
     const fd = new FormData(form);
     const leaf = String(fd.get("entryName") ?? "").trim();
+    if (leaf && existingNames.includes(leaf)) {
+      toast.error(`'${leaf}' already exists in this folder`);
+      return;
+    }
     const payload = new FormData();
     payload.append("name", folderName);
     payload.append("cid", String(fd.get("cid") ?? ""));
