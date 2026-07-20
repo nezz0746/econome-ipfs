@@ -2,6 +2,7 @@ import { Hono } from "hono";
 
 import type { RecordedUpload } from "./app";
 import type { FolderService } from "./folder-service";
+import { folderDocs } from "./openapi";
 import { parseTags } from "./tags";
 
 type Variables = { apiKeyId: string };
@@ -37,7 +38,7 @@ export function createFolderRoutes(
 ): Hono<{ Variables: Variables }> {
   const app = new Hono<{ Variables: Variables }>();
 
-  app.post("/", async (c) => {
+  app.post("/", folderDocs.folderCreate, async (c) => {
     let body: { name?: unknown; tags?: unknown };
     try {
       body = await c.req.json();
@@ -57,9 +58,11 @@ export function createFolderRoutes(
     }
   });
 
-  app.get("/", async (c) => c.json(await deps.folders.list()));
+  app.get("/", folderDocs.folderList, async (c) =>
+    c.json(await deps.folders.list()),
+  );
 
-  app.get("/:name", async (c) => {
+  app.get("/:name", folderDocs.folderGet, async (c) => {
     const detail = await deps.folders.get(
       c.req.param("name"),
       c.req.query("path") ?? "",
@@ -67,7 +70,7 @@ export function createFolderRoutes(
     return detail ? c.json(detail) : c.json({ error: "folder not found" }, 404);
   });
 
-  app.post("/:name/files", async (c) => {
+  app.post("/:name/files", folderDocs.folderUpload, async (c) => {
     const name = c.req.param("name");
     const commit = c.req.query("commit") !== "false";
     const body = await c.req.parseBody({ all: true });
@@ -115,7 +118,7 @@ export function createFolderRoutes(
     }
   });
 
-  app.post("/:name/cids", async (c) => {
+  app.post("/:name/cids", folderDocs.folderCids, async (c) => {
     let body: { entries?: unknown };
     try {
       body = await c.req.json();
@@ -144,7 +147,7 @@ export function createFolderRoutes(
     }
   });
 
-  app.post("/:name/move", async (c) => {
+  app.post("/:name/move", folderDocs.folderMove, async (c) => {
     let body: { from?: unknown; to?: unknown };
     try {
       body = await c.req.json();
@@ -164,7 +167,7 @@ export function createFolderRoutes(
     }
   });
 
-  app.delete("/:name/files", async (c) => {
+  app.delete("/:name/files", folderDocs.folderRemovePath, async (c) => {
     const path = c.req.query("path") ?? "";
     try {
       return c.json(await deps.folders.removePath(c.req.param("name"), path));
@@ -174,7 +177,7 @@ export function createFolderRoutes(
     }
   });
 
-  app.patch("/:name", async (c) => {
+  app.patch("/:name", folderDocs.folderSetTags, async (c) => {
     let body: { tags?: unknown };
     try {
       body = await c.req.json();
@@ -194,7 +197,7 @@ export function createFolderRoutes(
     }
   });
 
-  app.delete("/:name", async (c) => {
+  app.delete("/:name", folderDocs.folderDelete, async (c) => {
     try {
       await deps.folders.remove(c.req.param("name"));
       return c.json({ deleted: true });

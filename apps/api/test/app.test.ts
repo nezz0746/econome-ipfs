@@ -669,3 +669,106 @@ describe("folder routes", () => {
     expect(deps.folders.remove).toHaveBeenCalledWith("docs");
   });
 });
+
+describe("docs endpoints", () => {
+  it("serves the OpenAPI 3.1 spec publicly with the ApiKeyAuth scheme", async () => {
+    const res = await createApp(makeDeps()).request("/openapi.json");
+    expect(res.status).toBe(200);
+    const spec = (await res.json()) as {
+      openapi: string;
+      info: { title: string };
+      components?: { securitySchemes?: Record<string, unknown> };
+      paths?: Record<string, unknown>;
+    };
+    expect(spec.openapi).toMatch(/^3\.1/);
+    expect(spec.info.title).toBe("Econome Storage API");
+    expect(spec.components?.securitySchemes?.ApiKeyAuth).toMatchObject({
+      type: "apiKey",
+      in: "header",
+      name: "x-api-key",
+    });
+    // Internal gateway is never documented.
+    for (const path of Object.keys(spec.paths ?? {})) {
+      expect(path.startsWith("/cluster")).toBe(false);
+    }
+  });
+
+  it("serves the Scalar UI publicly", async () => {
+    const res = await createApp(makeDeps()).request("/docs");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type") ?? "").toContain("text/html");
+    expect(await res.text()).toContain("@scalar/api-reference@");
+  });
+
+  it("documents every ingest route with ApiKeyAuth", async () => {
+    const res = await createApp(makeDeps()).request("/openapi.json");
+    const spec = (await res.json()) as {
+      paths: Record<
+        string,
+        Record<string, { security?: unknown; tags?: string[] }>
+      >;
+    };
+    const expects: [string, string][] = [
+      ["/ingest", "post"],
+      ["/ingest/pin", "post"],
+      ["/ingest/import", "post"],
+      ["/ingest/record", "post"],
+      ["/ingest/{cid}", "delete"],
+    ];
+    for (const [path, method] of expects) {
+      const op = spec.paths[path]?.[method];
+      expect(op, `${method.toUpperCase()} ${path}`).toBeDefined();
+      expect(op?.security).toEqual([{ ApiKeyAuth: [] }]);
+      expect(op?.tags).toEqual(["ingest"]);
+    }
+  });
+
+  it("describes /ingest as a multipart upload", async () => {
+    const res = await createApp(makeDeps()).request("/openapi.json");
+    const spec = (await res.json()) as {
+      paths: Record<
+        string,
+        { post?: { requestBody?: { content?: Record<string, unknown> } } }
+      >;
+    };
+    expect(
+      spec.paths["/ingest"]?.post?.requestBody?.content?.[
+        "multipart/form-data"
+      ],
+    ).toBeDefined();
+  });
+
+  it("documents every folder route once, under /folders only", async () => {
+    const res = await createApp(makeDeps()).request("/openapi.json");
+    const spec = (await res.json()) as {
+      paths: Record<
+        string,
+        Record<string, { security?: unknown; tags?: string[] }>
+      >;
+    };
+    const expects: [string, string][] = [
+      ["/folders", "post"],
+      ["/folders", "get"],
+      ["/folders/{name}", "get"],
+      ["/folders/{name}", "patch"],
+      ["/folders/{name}", "delete"],
+      ["/folders/{name}/files", "post"],
+      ["/folders/{name}/files", "delete"],
+      ["/folders/{name}/cids", "post"],
+      ["/folders/{name}/move", "post"],
+    ];
+    for (const [path, method] of expects) {
+      const op = spec.paths[path]?.[method];
+      expect(op, `${method.toUpperCase()} ${path}`).toBeDefined();
+      expect(op?.security).toEqual([{ ApiKeyAuth: [] }]);
+      expect(op?.tags).toEqual(["folders"]);
+    }
+    for (const path of Object.keys(spec.paths)) {
+      expect(path.startsWith("/cluster")).toBe(false);
+    }
+    const del = spec.paths["/folders/{name}"]?.delete as
+      | { responses?: Record<string, unknown> }
+      | undefined;
+    expect(del?.responses?.["400"]).toBeDefined();
+  });
+});

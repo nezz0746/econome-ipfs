@@ -7,6 +7,7 @@ import { importCidFromGateway } from "./car-import";
 import type { ClusterClient, PinOptions } from "./cluster-client";
 import { createFolderRoutes } from "./folder-routes";
 import type { FolderService } from "./folder-service";
+import { docs, mountDocs } from "./openapi";
 import type { PeerService } from "./peer-service";
 import { summarizePinProgress } from "./pin-progress";
 import { parseTags, type TagSubscription, tagPinOptions } from "./tags";
@@ -76,6 +77,9 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
   app.use("*", logger());
   app.use("*", cors());
 
+  // Public API docs (spec + Scalar UI) — mounted before any auth middleware.
+  mountDocs(app);
+
   // The cluster peer id is static for the process; resolve it once, lazily,
   // and retry on failure rather than caching a rejection.
   let mainPeerId: Promise<string> | null = null;
@@ -104,7 +108,7 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
   app.get("/health", (c) => c.json({ ok: true }));
 
   // ----- Ingest (machine clients, API-key gated) -------------------------
-  app.post("/ingest", apiKeyAuth(deps.findApiKey), async (c) => {
+  app.post("/ingest", docs.ingest, apiKeyAuth(deps.findApiKey), async (c) => {
     const body = await c.req.parseBody();
     const file = body.file;
     if (!(file instanceof File)) {
@@ -143,198 +147,218 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
   // pinning service. Preserves CIDs; the cluster fetches the content over the
   // IPFS network and replicates it. No upload record is written: size and
   // provenance resolve later from Kubo (dag/stat), so we never seed a bogus 0.
-  app.post("/ingest/pin", apiKeyAuth(deps.findApiKey), async (c) => {
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: "invalid JSON body" }, 400);
-    }
+  app.post(
+    "/ingest/pin",
+    docs.ingestPin,
+    apiKeyAuth(deps.findApiKey),
+    async (c) => {
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "invalid JSON body" }, 400);
+      }
 
-    const cids = (body as { cids?: unknown }).cids;
-    if (
-      !Array.isArray(cids) ||
-      cids.length === 0 ||
-      cids.length > PIN_BATCH_MAX ||
-      !cids.every((cid) => typeof cid === "string" && cid.length > 0)
-    ) {
-      return c.json(
-        {
-          error: `expected 'cids' to be a non-empty array of up to ${PIN_BATCH_MAX} CID strings`,
+      const cids = (body as { cids?: unknown }).cids;
+      if (
+        !Array.isArray(cids) ||
+        cids.length === 0 ||
+        cids.length > PIN_BATCH_MAX ||
+        !cids.every((cid) => typeof cid === "string" && cid.length > 0)
+      ) {
+        return c.json(
+          {
+            error: `expected 'cids' to be a non-empty array of up to ${PIN_BATCH_MAX} CID strings`,
+          },
+          400,
+        );
+      }
+      const tags = parseTags((body as { tags?: unknown }).tags);
+      if (tags === null) {
+        return c.json(
+          { error: "invalid 'tags': array of lowercase slugs expected" },
+          400,
+        );
+      }
+      const pinOpts = await pinOptionsForTags(tags);
+
+      const results = await mapPool(
+        cids as string[],
+        PIN_CONCURRENCY,
+        async (cid) => {
+          try {
+            await deps.cluster.pinByCid(cid, pinOpts);
+            return { cid, ok: true as const };
+          } catch (e) {
+            return {
+              cid,
+              ok: false as const,
+              error: e instanceof Error ? e.message : "pin failed",
+            };
+          }
         },
-        400,
       );
-    }
-    const tags = parseTags((body as { tags?: unknown }).tags);
-    if (tags === null) {
-      return c.json(
-        { error: "invalid 'tags': array of lowercase slugs expected" },
-        400,
-      );
-    }
-    const pinOpts = await pinOptionsForTags(tags);
 
-    const results = await mapPool(
-      cids as string[],
-      PIN_CONCURRENCY,
-      async (cid) => {
-        try {
-          await deps.cluster.pinByCid(cid, pinOpts);
-          return { cid, ok: true as const };
-        } catch (e) {
-          return {
-            cid,
-            ok: false as const,
-            error: e instanceof Error ? e.message : "pin failed",
-          };
-        }
-      },
-    );
-
-    const failed = results.filter((r) => !r.ok).length;
-    return c.json({ pinned: results.length - failed, failed, results });
-  });
+      const failed = results.filter((r) => !r.ok).length;
+      return c.json({ pinned: results.length - failed, failed, results });
+    },
+  );
 
   // CID-preserving migration off an HTTP-only pinning service (e.g. Pinata):
   // fetch each CID's DAG as a CAR from a gateway, import the raw blocks into
   // kubo (preserving the CID), then track+replicate it in the cluster. Verifies
   // the imported root equals the requested CID.
-  app.post("/ingest/import", apiKeyAuth(deps.findApiKey), async (c) => {
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: "invalid JSON body" }, 400);
-    }
+  app.post(
+    "/ingest/import",
+    docs.ingestImport,
+    apiKeyAuth(deps.findApiKey),
+    async (c) => {
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "invalid JSON body" }, 400);
+      }
 
-    const cids = (body as { cids?: unknown }).cids;
-    const rawGateway = (body as { gateway?: unknown }).gateway;
-    const gateway =
-      typeof rawGateway === "string" && rawGateway.length > 0
-        ? rawGateway
-        : DEFAULT_IMPORT_GATEWAY;
+      const cids = (body as { cids?: unknown }).cids;
+      const rawGateway = (body as { gateway?: unknown }).gateway;
+      const gateway =
+        typeof rawGateway === "string" && rawGateway.length > 0
+          ? rawGateway
+          : DEFAULT_IMPORT_GATEWAY;
 
-    if (
-      !Array.isArray(cids) ||
-      cids.length === 0 ||
-      cids.length > PIN_BATCH_MAX ||
-      !cids.every((cid) => typeof cid === "string" && cid.length > 0)
-    ) {
-      return c.json(
-        {
-          error: `expected 'cids' to be a non-empty array of up to ${PIN_BATCH_MAX} CID strings`,
+      if (
+        !Array.isArray(cids) ||
+        cids.length === 0 ||
+        cids.length > PIN_BATCH_MAX ||
+        !cids.every((cid) => typeof cid === "string" && cid.length > 0)
+      ) {
+        return c.json(
+          {
+            error: `expected 'cids' to be a non-empty array of up to ${PIN_BATCH_MAX} CID strings`,
+          },
+          400,
+        );
+      }
+      const tags = parseTags((body as { tags?: unknown }).tags);
+      if (tags === null) {
+        return c.json(
+          { error: "invalid 'tags': array of lowercase slugs expected" },
+          400,
+        );
+      }
+      const pinOpts = await pinOptionsForTags(tags);
+
+      const apiKeyId = c.get("apiKeyId") ?? null;
+      const results = await mapPool(
+        cids as string[],
+        IMPORT_CONCURRENCY,
+        async (cid) => {
+          const r = await importCidFromGateway(cid, {
+            gateway,
+            ipfsApiUrl: deps.ipfsApiUrl,
+          });
+          if (!r.ok) return r;
+          // Content is now local in kubo; tracking it in the cluster completes
+          // instantly and replicates it to followers.
+          try {
+            await deps.cluster.pinByCid(cid, pinOpts);
+          } catch (e) {
+            return {
+              ...r,
+              ok: false,
+              error: `imported_but_cluster_pin_failed: ${
+                e instanceof Error ? e.message : "unknown"
+              }`,
+            };
+          }
+          // Record it (with the real DAG size) so it shows on the Files page and
+          // its size resolves instantly (no dag/stat). Idempotent, best-effort.
+          if (typeof r.bytes === "number" && r.bytes > 0) {
+            await deps
+              .recordUpload({ cid, name: null, size: r.bytes, tags, apiKeyId })
+              .catch(() => {});
+          }
+          return r;
         },
-        400,
       );
-    }
-    const tags = parseTags((body as { tags?: unknown }).tags);
-    if (tags === null) {
-      return c.json(
-        { error: "invalid 'tags': array of lowercase slugs expected" },
-        400,
-      );
-    }
-    const pinOpts = await pinOptionsForTags(tags);
 
-    const apiKeyId = c.get("apiKeyId") ?? null;
-    const results = await mapPool(
-      cids as string[],
-      IMPORT_CONCURRENCY,
-      async (cid) => {
-        const r = await importCidFromGateway(cid, {
-          gateway,
-          ipfsApiUrl: deps.ipfsApiUrl,
-        });
-        if (!r.ok) return r;
-        // Content is now local in kubo; tracking it in the cluster completes
-        // instantly and replicates it to followers.
-        try {
-          await deps.cluster.pinByCid(cid, pinOpts);
-        } catch (e) {
-          return {
-            ...r,
-            ok: false,
-            error: `imported_but_cluster_pin_failed: ${
-              e instanceof Error ? e.message : "unknown"
-            }`,
-          };
-        }
-        // Record it (with the real DAG size) so it shows on the Files page and
-        // its size resolves instantly (no dag/stat). Idempotent, best-effort.
-        if (typeof r.bytes === "number" && r.bytes > 0) {
-          await deps
-            .recordUpload({ cid, name: null, size: r.bytes, tags, apiKeyId })
-            .catch(() => {});
-        }
-        return r;
-      },
-    );
-
-    const imported = results.filter((r) => r.ok).length;
-    return c.json({ imported, failed: results.length - imported, results });
-  });
+      const imported = results.filter((r) => r.ok).length;
+      return c.json({ imported, failed: results.length - imported, results });
+    },
+  );
 
   // Backfill: record already-stored CIDs (with sizes) in the uploads table so
   // they show on the Files page. For content migrated via pin/import, which
   // stores bytes without an upload record. DB-only (no kubo/gateway), idempotent.
-  app.post("/ingest/record", apiKeyAuth(deps.findApiKey), async (c) => {
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: "invalid JSON body" }, 400);
-    }
-
-    const files = (body as { files?: unknown }).files;
-    if (
-      !Array.isArray(files) ||
-      files.length === 0 ||
-      files.length > PIN_BATCH_MAX
-    ) {
-      return c.json(
-        {
-          error: `expected 'files' to be a non-empty array of up to ${PIN_BATCH_MAX} {cid,size} entries`,
-        },
-        400,
-      );
-    }
-
-    const apiKeyId = c.get("apiKeyId") ?? null;
-    let recorded = 0;
-    let skipped = 0;
-    for (const f of files) {
-      const cid = (f as { cid?: unknown }).cid;
-      const size = Number((f as { size?: unknown }).size);
-      const name = (f as { name?: unknown }).name;
-      if (
-        typeof cid !== "string" ||
-        cid.length === 0 ||
-        !Number.isFinite(size)
-      ) {
-        skipped += 1;
-        continue;
+  app.post(
+    "/ingest/record",
+    docs.ingestRecord,
+    apiKeyAuth(deps.findApiKey),
+    async (c) => {
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "invalid JSON body" }, 400);
       }
-      await deps
-        .recordUpload({
-          cid,
-          name: typeof name === "string" ? name : null,
-          size,
-          tags: [],
-          apiKeyId,
-        })
-        .catch(() => {});
-      recorded += 1;
-    }
-    return c.json({ recorded, skipped });
-  });
+
+      const files = (body as { files?: unknown }).files;
+      if (
+        !Array.isArray(files) ||
+        files.length === 0 ||
+        files.length > PIN_BATCH_MAX
+      ) {
+        return c.json(
+          {
+            error: `expected 'files' to be a non-empty array of up to ${PIN_BATCH_MAX} {cid,size} entries`,
+          },
+          400,
+        );
+      }
+
+      const apiKeyId = c.get("apiKeyId") ?? null;
+      let recorded = 0;
+      let skipped = 0;
+      for (const f of files) {
+        const cid = (f as { cid?: unknown }).cid;
+        const size = Number((f as { size?: unknown }).size);
+        const name = (f as { name?: unknown }).name;
+        if (
+          typeof cid !== "string" ||
+          cid.length === 0 ||
+          !Number.isFinite(size)
+        ) {
+          skipped += 1;
+          continue;
+        }
+        await deps
+          .recordUpload({
+            cid,
+            name: typeof name === "string" ? name : null,
+            size,
+            tags: [],
+            apiKeyId,
+          })
+          .catch(() => {});
+        recorded += 1;
+      }
+      return c.json({ recorded, skipped });
+    },
+  );
 
   // Unpin + forget a CID (used by external integrations on asset deletion).
-  app.delete("/ingest/:cid", apiKeyAuth(deps.findApiKey), async (c) => {
-    const cid = c.req.param("cid");
-    await deps.cluster.unpin(cid);
-    await deps.forgetUpload(cid);
-    return c.json({ cid, unpinned: true });
-  });
+  app.delete(
+    "/ingest/:cid",
+    docs.ingestDelete,
+    apiKeyAuth(deps.findApiKey),
+    async (c) => {
+      const cid = c.req.param("cid");
+      await deps.cluster.unpin(cid);
+      await deps.forgetUpload(cid);
+      return c.json({ cid, unpinned: true });
+    },
+  );
 
   // ----- Folders (MFS + IPNS) --------------------------------------------
   // Mounted twice: /folders for machine clients (API key), and under the

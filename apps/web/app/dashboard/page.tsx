@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  BookOpen,
   Database,
   ExternalLink,
   Network,
@@ -16,6 +17,13 @@ import { getOverview, getPinProgress, type PinProgress } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 const GATEWAY_URL = process.env.IPFS_GATEWAY_URL ?? "http://localhost:8081";
+
+// Browser-reachable API base. Empty (prod default until a domain is
+// attached) hides the docs card — never render a broken link.
+const API_PUBLIC_URL = (
+  process.env.API_PUBLIC_URL ?? "http://localhost:8080"
+).replace(/\/$/, "");
+const API_DOCS_URL = API_PUBLIC_URL ? `${API_PUBLIC_URL}/docs` : null;
 
 export default async function OverviewPage() {
   let overview: Awaited<ReturnType<typeof getOverview>> | null = null;
@@ -74,6 +82,38 @@ export default async function OverviewPage() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Public machine-API reference (OpenAPI/Scalar). */}
+      {API_DOCS_URL ? (
+        <Card className="mb-4">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">API Docs</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            <div className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate font-mono text-sm">
+                {API_DOCS_URL}
+              </code>
+              <CopyButton value={API_DOCS_URL} label="Docs URL copied" />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                aria-label="Open API docs"
+                render={
+                  <a href={API_DOCS_URL} target="_blank" rel="noreferrer" />
+                }
+              >
+                <BookOpen className="size-3.5" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Interactive reference for the machine API (ingest &amp; folders) —
+              authenticate with an API key.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Keep progress live while a migration/pin is in flight. */}
       {inFlight > 0 ? <AutoRefresh seconds={8} /> : null}

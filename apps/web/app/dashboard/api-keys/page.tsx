@@ -26,6 +26,11 @@ import { createApiKey, revokeApiKey } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
 
+const API_PUBLIC_URL = (
+  process.env.API_PUBLIC_URL ?? "http://localhost:8080"
+).replace(/\/$/, "");
+const API_DOCS_URL = API_PUBLIC_URL ? `${API_PUBLIC_URL}/docs` : null;
+
 export default async function ApiKeysPage({
   searchParams,
 }: {
@@ -54,6 +59,21 @@ export default async function ApiKeysPage({
         title="API Keys"
         description="Machine credentials for the ingest endpoint. Keys are shown once."
       />
+
+      {API_DOCS_URL ? (
+        <p className="text-sm text-muted-foreground">
+          Use these keys against the machine API —{" "}
+          <a
+            className="underline underline-offset-4"
+            href={API_DOCS_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            read the API docs
+          </a>
+          .
+        </p>
+      ) : null}
 
       {created && (
         <Card className="border-primary/40 bg-primary/5">
