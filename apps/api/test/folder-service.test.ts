@@ -380,4 +380,19 @@ describe("reconcile", () => {
     );
     expect(await service.reconcile()).toEqual({ repinned: 0, cleaned: 0 });
   });
+
+  it("continues past a failing folder and still runs orphan cleanup", async () => {
+    const { service, ops, kubo } = makeFakes({
+      pins: [folderPin({ cid: "bafyghost", metadata: { folder: "ghost" } })],
+    });
+    (kubo.filesLs as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { name: "broken", type: "dir", size: 0, cid: "bafyx" },
+    ]);
+    (kubo.filesFlush as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("kubo files/flush failed: 500 boom"),
+    );
+    const res = await service.reconcile();
+    expect(res).toEqual({ repinned: 0, cleaned: 1 });
+    expect(ops).toContain("unpin:bafyghost");
+  });
 });

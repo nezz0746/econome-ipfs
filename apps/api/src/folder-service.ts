@@ -382,30 +382,36 @@ export class FolderService {
     let cleaned = 0;
 
     for (const dir of dirs) {
-      await this.enqueue(dir.name, async () => {
-        const rootCid = await this.deps.kubo.filesFlush(this.mfsPath(dir.name));
-        const mine = this.folderPins(pins, dir.name);
-        if (!mine.some((p) => p.cid === rootCid)) {
-          const tags = mine[0]
-            ? (parseTags(mine[0].metadata[TAGS_META_KEY]) ?? [])
-            : [];
-          await this.deps.cluster.pinByCid(
-            rootCid,
-            await this.pinOptions(dir.name, tags),
+      try {
+        await this.enqueue(dir.name, async () => {
+          const rootCid = await this.deps.kubo.filesFlush(
+            this.mfsPath(dir.name),
           );
-          await this.deps.kubo.namePublish(
-            `${KEY_PREFIX}${dir.name}`,
-            `/ipfs/${rootCid}`,
-          );
-          repinned += 1;
-        }
-        for (const stale of mine.filter((p) => p.cid !== rootCid)) {
-          await this.deps.cluster
-            .unpin(stale.cid)
-            .catch((err) => this.log(`reconcile unpin ${stale.cid}: ${err}`));
-          cleaned += 1;
-        }
-      });
+          const mine = this.folderPins(pins, dir.name);
+          if (!mine.some((p) => p.cid === rootCid)) {
+            const tags = mine[0]
+              ? (parseTags(mine[0].metadata[TAGS_META_KEY]) ?? [])
+              : [];
+            await this.deps.cluster.pinByCid(
+              rootCid,
+              await this.pinOptions(dir.name, tags),
+            );
+            await this.deps.kubo.namePublish(
+              `${KEY_PREFIX}${dir.name}`,
+              `/ipfs/${rootCid}`,
+            );
+            repinned += 1;
+          }
+          for (const stale of mine.filter((p) => p.cid !== rootCid)) {
+            await this.deps.cluster
+              .unpin(stale.cid)
+              .catch((err) => this.log(`reconcile unpin ${stale.cid}: ${err}`));
+            cleaned += 1;
+          }
+        });
+      } catch (err) {
+        this.log(`reconcile of ${dir.name} failed: ${err}`);
+      }
     }
 
     const names = new Set(dirs.map((d) => d.name));
