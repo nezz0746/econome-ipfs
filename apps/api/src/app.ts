@@ -5,6 +5,8 @@ import { logger } from "hono/logger";
 import { type ApiKeyRecord, apiKeyAuth, internalAuth } from "./auth";
 import { importCidFromGateway } from "./car-import";
 import type { ClusterClient, PinOptions } from "./cluster-client";
+import { createFolderRoutes } from "./folder-routes";
+import type { FolderService } from "./folder-service";
 import type { PeerService } from "./peer-service";
 import { summarizePinProgress } from "./pin-progress";
 import { parseTags, type TagSubscription, tagPinOptions } from "./tags";
@@ -32,6 +34,8 @@ export interface AppDeps {
   ipfsApiUrl: string;
   /** Enriched peer views (files, geo, bytes, history) for the dashboard. */
   peerService: PeerService;
+  /** MFS-backed folders (create/mutate/list + reconcile). */
+  folders: FolderService;
 }
 
 type Variables = { apiKeyId: string };
@@ -332,6 +336,17 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
     return c.json({ cid, unpinned: true });
   });
 
+  // ----- Folders (MFS + IPNS) --------------------------------------------
+  // Mounted twice: /folders for machine clients (API key), and under the
+  // internal-token gateway below for the dashboard BFF.
+  const folderRoutes = createFolderRoutes({
+    folders: deps.folders,
+    recordUpload: deps.recordUpload,
+  });
+  app.use("/folders", apiKeyAuth(deps.findApiKey));
+  app.use("/folders/*", apiKeyAuth(deps.findApiKey));
+  app.route("/folders", folderRoutes);
+
   // ----- Cluster gateway (dashboard via Next BFF, internal-token gated) ---
   const gateway = new Hono<{ Variables: Variables }>();
   gateway.use("*", internalAuth(deps.internalToken));
@@ -373,6 +388,8 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
       underReplicated,
     });
   });
+
+  gateway.route("/folders", folderRoutes);
 
   app.route("/cluster", gateway);
 

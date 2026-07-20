@@ -197,6 +197,7 @@ const folderService = new FolderService({
 const app = createApp({
   cluster,
   peerService,
+  folders: folderService,
   internalToken: config.internalToken,
   ipfsApiUrl: config.ipfsApiUrl,
   async findApiKey(hashedKey: string) {
