@@ -41,3 +41,41 @@ export async function readProjectConfig(
     return null;
   }
 }
+
+/**
+ * Credentials for `econome publish`, kept in a separate 0600 file rather than
+ * in config.json: the follower config is written wholesale by `join`, which
+ * would clobber a stored key.
+ */
+export interface PublishCredentials {
+  apiKey?: string;
+  apiUrl?: string;
+  gatewayUrl?: string;
+}
+
+export const PUBLISH_FILE = "publish.json";
+
+export async function readPublishCredentials(
+  dir: string,
+): Promise<PublishCredentials | null> {
+  try {
+    const raw = await readFile(join(dir, PUBLISH_FILE), "utf8");
+    return JSON.parse(raw) as PublishCredentials;
+  } catch {
+    return null;
+  }
+}
+
+/** Written 0600: it holds a credential. */
+export async function writePublishCredentials(
+  dir: string,
+  creds: PublishCredentials,
+): Promise<string> {
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, PUBLISH_FILE);
+  await writeFile(path, `${JSON.stringify(creds, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  return path;
+}

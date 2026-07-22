@@ -1,9 +1,12 @@
 import { existsSync, statSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
-import { basename, join as pathJoin, resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { FoldersApi } from "../lib/folders-api.js";
-import { projectDir, readProjectConfig } from "../lib/project.js";
+import {
+  projectDir,
+  readPublishCredentials,
+  writePublishCredentials,
+} from "../lib/project.js";
 import { explainMissing, resolvePublishConfig } from "../lib/publish-config.js";
 import { batchFiles, formatBytes, inspectSite, walkSite } from "../lib/site.js";
 import { parseTagsInput } from "../lib/tags.js";
@@ -45,10 +48,10 @@ export async function publish(
     return;
   }
 
-  const stored = await readProjectConfig(projectDir());
+  const stored = await readPublishCredentials(projectDir());
   const config = resolvePublishConfig({
     env: process.env,
-    stored: stored as { apiUrl?: string; apiKey?: string } | null,
+    stored,
     flags: { apiUrl: opts.apiUrl, gatewayUrl: opts.gatewayUrl },
   });
 
@@ -58,15 +61,13 @@ export async function publish(
       p.cancel("Cancelled.");
       return;
     }
-    const dirPath = projectDir();
-    await mkdir(dirPath, { recursive: true });
-    await writeFile(
-      pathJoin(dirPath, "publish.json"),
-      `${JSON.stringify({ apiKey: answer }, null, 2)}\n`,
-      { encoding: "utf8", mode: 0o600 },
-    );
+    // Preserve any origins already stored alongside the key.
+    const path = await writePublishCredentials(projectDir(), {
+      ...(stored ?? {}),
+      apiKey: answer,
+    });
     config.apiKey = answer;
-    p.log.success(`Key stored in ${pathJoin(dirPath, "publish.json")} (0600).`);
+    p.log.success(`Key stored in ${path} (0600).`);
   }
 
   // A dry run makes no network call, so it must work before any credential is
