@@ -3,6 +3,12 @@
   "version": "0.3.2",
   "description": "Payload CMS v3 storage adapter that pins uploads to IPFS via an IPFS Cluster ingest API and serves them from an IPFS gateway.",
   "homepage": "https://econome.studio",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nezz0746/econome-ipfs.git",
+    "directory": "packages/payload-storage-ipfs"
+  },
+  "bugs": "https://github.com/nezz0746/econome-ipfs/issues",
   "author": "L'Économe <contact@econome.studio> (https://econome.studio)",
   "keywords": [
     "payload",
