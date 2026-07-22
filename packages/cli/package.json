@@ -1,6 +1,6 @@
 {
   "name": "@leconome/cli",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Publish static sites to IPFS, and join an Econome cluster as a follower.",
   "homepage": "https://econome.studio",
   "repository": {
