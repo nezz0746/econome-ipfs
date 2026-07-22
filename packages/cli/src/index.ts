@@ -22,6 +22,22 @@ program
   });
 
 program
+  .command("publish")
+  .argument("<dir>", "directory to publish (usually a build output)")
+  .option("-n, --name <name>", "folder name; defaults to the directory name")
+  .option("-t, --tags <tags>", "comma-separated replication tags")
+  .option("--dry-run", "list what would be uploaded, upload nothing")
+  .option("-y, --yes", "skip the confirmation prompt")
+  .option("--api-url <url>", "override the API origin")
+  .option("--gateway-url <url>", "override the gateway used for printed URLs")
+  .option("--save-key", "prompt for an API key and store it for future runs")
+  .description("Publish a directory to IPFS and print its gateway URL")
+  .action(async (dir: string, opts) => {
+    const { publish } = await import("./commands/publish.js");
+    await publish(dir, opts);
+  });
+
+program
   .command("status")
   .description("Show whether the follower is running and replicating")
   .action(async () => {
