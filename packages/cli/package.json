@@ -1,7 +1,14 @@
 {
   "name": "@leconome/cli",
   "version": "0.5.0",
-  "description": "One-command CLI to join the Econome IPFS cluster as a follower.",
+  "description": "Publish static sites to IPFS, and join an Econome cluster as a follower.",
+  "homepage": "https://econome.studio",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nezz0746/econome-ipfs.git",
+    "directory": "packages/cli"
+  },
+  "bugs": "https://github.com/nezz0746/econome-ipfs/issues",
   "keywords": [
     "ipfs",
     "ipfs-cluster",
