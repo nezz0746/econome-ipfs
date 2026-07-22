@@ -30,11 +30,40 @@ program
   .option("-y, --yes", "skip the confirmation prompt")
   .option("--api-url <url>", "override the API origin")
   .option("--gateway-url <url>", "override the gateway used for printed URLs")
-  .option("--save-key", "prompt for an API key and store it for future runs")
   .description("Publish a directory to IPFS and print its gateway URL")
   .action(async (dir: string, opts) => {
     const { publish } = await import("./commands/publish.js");
     await publish(dir, opts);
+  });
+
+const auth = program
+  .command("auth")
+  .description("Store, inspect and remove the API key used by publish");
+
+auth
+  .command("login", { isDefault: true })
+  .option("--api-url <url>", "override the API origin")
+  .option("--no-verify", "store the key without checking it against the API")
+  .description("Prompt for an API key and store it")
+  .action(async (opts) => {
+    const { login } = await import("./commands/auth.js");
+    await login(opts);
+  });
+
+auth
+  .command("status")
+  .description("Show whether a key is configured, and where it comes from")
+  .action(async () => {
+    const { status } = await import("./commands/auth.js");
+    await status();
+  });
+
+auth
+  .command("logout")
+  .description("Remove the stored API key")
+  .action(async () => {
+    const { logout } = await import("./commands/auth.js");
+    await logout();
   });
 
 program

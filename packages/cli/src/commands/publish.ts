@@ -2,11 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { FoldersApi } from "../lib/folders-api.js";
-import {
-  projectDir,
-  readPublishCredentials,
-  writePublishCredentials,
-} from "../lib/project.js";
+import { projectDir, readCredentials } from "../lib/project.js";
 import { explainMissing, resolvePublishConfig } from "../lib/publish-config.js";
 import { batchFiles, formatBytes, inspectSite, walkSite } from "../lib/site.js";
 import { parseTagsInput } from "../lib/tags.js";
@@ -21,7 +17,6 @@ export interface PublishOptions {
   yes?: boolean;
   apiUrl?: string;
   gatewayUrl?: string;
-  saveKey?: boolean;
 }
 
 /** Default folder name from the directory, or its parent for build outputs. */
@@ -48,27 +43,12 @@ export async function publish(
     return;
   }
 
-  const stored = await readPublishCredentials(projectDir());
+  const stored = await readCredentials(projectDir());
   const config = resolvePublishConfig({
     env: process.env,
     stored,
     flags: { apiUrl: opts.apiUrl, gatewayUrl: opts.gatewayUrl },
   });
-
-  if (opts.saveKey) {
-    const answer = await p.password({ message: "API key" });
-    if (p.isCancel(answer) || !answer) {
-      p.cancel("Cancelled.");
-      return;
-    }
-    // Preserve any origins already stored alongside the key.
-    const path = await writePublishCredentials(projectDir(), {
-      ...(stored ?? {}),
-      apiKey: answer,
-    });
-    config.apiKey = answer;
-    p.log.success(`Key stored in ${path} (0600).`);
-  }
 
   // A dry run makes no network call, so it must work before any credential is
   // configured: checking the site is exactly what you want to do first.
