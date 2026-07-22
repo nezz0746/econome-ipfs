@@ -1,6 +1,6 @@
 {
   "name": "@leconome/cli",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "One-command CLI to join the Econome IPFS cluster as a follower.",
   "keywords": [
     "ipfs",
