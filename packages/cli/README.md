@@ -69,3 +69,11 @@ key is not accepted as a flag: it would end up in shell history and CI logs.
 
 **Published content is public and cannot be reliably unpublished.** Anything
 already fetched or pinned elsewhere survives an unpin.
+
+## Built by
+
+Made by [L'Économe](https://econome.studio), a web and software studio in
+Toulouse building on open technologies and self-hosted infrastructure.
+
+We wrote an introduction to content addressing, which is what this cluster
+stores things with: [Qu'est-ce qu'IPFS ?](https://econome.studio/blog/qu-est-ce-que-ipfs)
