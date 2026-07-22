@@ -276,6 +276,40 @@ describe("mutations", () => {
     expect(ops).toContain("cp:/ipfs/bafyfile->/econome/docs/sub/b.txt");
   });
 
+  it("addFiles replaces an existing path instead of failing on it", async () => {
+    // kubo's files/cp errors when the destination exists, which made a folder
+    // publishable exactly once: every re-upload of the same path 500'd.
+    const { service, ops } = makeFakes({
+      pins: [folderPin({ cid: "bafyroot" })],
+    });
+    await service.addFiles("docs", [
+      { content: new Blob(["v2"]), path: "index.html" },
+    ]);
+    const rm = ops.indexOf("rm:/econome/docs/index.html");
+    const cp = ops.indexOf("cp:/ipfs/bafyfile->/econome/docs/index.html");
+    expect(rm).toBeGreaterThanOrEqual(0);
+    expect(cp).toBeGreaterThan(rm); // removed first, then copied
+  });
+
+  it("addFiles tolerates a remove that finds nothing", async () => {
+    const { service, kubo } = makeFakes({
+      pins: [folderPin({ cid: "bafyroot" })],
+    });
+    kubo.filesRm.mockRejectedValueOnce(new Error("file does not exist"));
+    await expect(
+      service.addFiles("docs", [{ content: new Blob(["a"]), path: "new.txt" }]),
+    ).resolves.toMatchObject({ rootCid: "bafyroot" });
+  });
+
+  it("addCids also replaces rather than failing on an existing path", async () => {
+    const { service, ops } = makeFakes({
+      pins: [folderPin({ cid: "bafyroot" })],
+    });
+    await service.addCids("docs", [{ cid: "bafyX", path: "a.txt" }]);
+    expect(ops).toContain("rm:/econome/docs/a.txt");
+    expect(ops).toContain("cp:/ipfs/bafyX->/econome/docs/a.txt");
+  });
+
   it("addFiles with commit:false stages without flushing", async () => {
     const { service, ops } = makeFakes();
     const res = await service.addFiles(
