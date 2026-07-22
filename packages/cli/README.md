@@ -24,7 +24,7 @@ follower under `~/.econome`, and registers the new peer with the dashboard.
 Publish a directory to IPFS and get a URL back:
 
 ```bash
-export ECONOME_API_KEY=…            # or: econome publish --save-key
+econome auth login                  # once
 econome publish ./dist --name mon-site
 ```
 
@@ -40,6 +40,21 @@ econome publish ./dist --tags web   # replication tags
 
 `--dry-run` needs no credentials: checking what you are about to publish is the
 first thing you want to do.
+
+### Authentication
+
+```bash
+econome auth login      # prompts for a key, checks it, stores it 0600
+econome auth status     # where the key comes from; never prints it
+econome auth logout     # removes the stored key
+```
+
+The key is stored in `~/.econome/creds.json`, separate from the follower config
+that `join` rewrites. `login` verifies the key against the API before storing
+it, so a mistyped key fails immediately rather than at your first publish.
+
+`ECONOME_API_KEY` overrides anything stored, which is what you want in CI.
+`auth status` says so when both are present.
 
 ### Before you publish
 

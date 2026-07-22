@@ -58,6 +58,11 @@ export class FoldersApi {
     return body as T;
   }
 
+  /** Cheapest authenticated call; used to verify a key. */
+  async list(): Promise<FolderSummary[]> {
+    return this.request<FolderSummary[]>("/folders", { method: "GET" });
+  }
+
   /** Create the folder, tolerating one that already exists. */
   async ensureFolder(name: string, tags: string[]): Promise<void> {
     try {
