@@ -87,3 +87,11 @@ Any server implementing these two routes works:
 ## License
 
 MIT
+
+## Built by
+
+Made by [L'Économe](https://econome.studio), a web and software studio in
+Toulouse building on open technologies and self-hosted infrastructure.
+
+New to content addressing? We wrote an introduction to why we store client
+media this way: [Qu'est-ce qu'IPFS ?](https://econome.studio/blog/qu-est-ce-que-ipfs)
