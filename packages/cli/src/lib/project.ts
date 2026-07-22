@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { FollowerConfig } from "./config";
@@ -43,39 +43,50 @@ export async function readProjectConfig(
 }
 
 /**
- * Credentials for `econome publish`, kept in a separate 0600 file rather than
- * in config.json: the follower config is written wholesale by `join`, which
- * would clobber a stored key.
+ * CLI credentials, kept in their own 0600 file rather than in config.json:
+ * the follower config is written wholesale by `join`, which would clobber a
+ * stored key. Named generically because anything beyond publish that needs
+ * the machine API will use the same credential.
  */
-export interface PublishCredentials {
+export interface Credentials {
   apiKey?: string;
   apiUrl?: string;
   gatewayUrl?: string;
 }
 
-export const PUBLISH_FILE = "publish.json";
+export const CREDENTIALS_FILE = "creds.json";
 
-export async function readPublishCredentials(
+export async function readCredentials(
   dir: string,
-): Promise<PublishCredentials | null> {
+): Promise<Credentials | null> {
   try {
-    const raw = await readFile(join(dir, PUBLISH_FILE), "utf8");
-    return JSON.parse(raw) as PublishCredentials;
+    const raw = await readFile(join(dir, CREDENTIALS_FILE), "utf8");
+    return JSON.parse(raw) as Credentials;
   } catch {
     return null;
   }
 }
 
 /** Written 0600: it holds a credential. */
-export async function writePublishCredentials(
+export async function writeCredentials(
   dir: string,
-  creds: PublishCredentials,
+  creds: Credentials,
 ): Promise<string> {
   await mkdir(dir, { recursive: true });
-  const path = join(dir, PUBLISH_FILE);
+  const path = join(dir, CREDENTIALS_FILE);
   await writeFile(path, `${JSON.stringify(creds, null, 2)}\n`, {
     encoding: "utf8",
     mode: 0o600,
   });
   return path;
+}
+
+/** Remove stored credentials. Returns false when there were none. */
+export async function clearCredentials(dir: string): Promise<boolean> {
+  try {
+    await rm(join(dir, CREDENTIALS_FILE));
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  clearCredentials,
+  readCredentials,
   readProjectConfig,
-  readPublishCredentials,
+  writeCredentials,
   writeProject,
-  writePublishCredentials,
 } from "./project";
 
 describe("writeProject / readProjectConfig", () => {
@@ -44,27 +45,47 @@ describe("writeProject / readProjectConfig", () => {
   });
 });
 
-describe("publish credentials", () => {
+describe("credentials", () => {
   it("reads back what --save-key wrote", async () => {
     const dir = await mkdtemp(join(tmpdir(), "econome-creds-"));
-    await writePublishCredentials(dir, { apiKey: "eco_saved" });
-    expect(await readPublishCredentials(dir)).toEqual({ apiKey: "eco_saved" });
+    await writeCredentials(dir, { apiKey: "eco_saved" });
+    expect(await readCredentials(dir)).toEqual({ apiKey: "eco_saved" });
   });
 
   it("writes the file 0600, since it holds a credential", async () => {
     const dir = await mkdtemp(join(tmpdir(), "econome-creds-"));
-    const path = await writePublishCredentials(dir, { apiKey: "k" });
+    const path = await writeCredentials(dir, { apiKey: "k" });
     expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 
   it("returns null when nothing has been saved", async () => {
     const dir = await mkdtemp(join(tmpdir(), "econome-creds-"));
-    expect(await readPublishCredentials(dir)).toBeNull();
+    expect(await readCredentials(dir)).toBeNull();
   });
 
   it("keeps the credentials out of the follower config that join overwrites", async () => {
     const dir = await mkdtemp(join(tmpdir(), "econome-creds-"));
-    await writePublishCredentials(dir, { apiKey: "k" });
+    await writeCredentials(dir, { apiKey: "k" });
     expect(existsSync(join(dir, "config.json"))).toBe(false);
+    expect(existsSync(join(dir, "creds.json"))).toBe(true);
+  });
+
+  it("clears stored credentials, and reports when there were none", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "econome-creds-"));
+    expect(await clearCredentials(dir)).toBe(false);
+    await writeCredentials(dir, { apiKey: "k" });
+    expect(await clearCredentials(dir)).toBe(true);
+    expect(await readCredentials(dir)).toBeNull();
+  });
+
+  it("preserves other stored fields when the key is replaced", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "econome-creds-"));
+    await writeCredentials(dir, { apiKey: "old", apiUrl: "https://a.example" });
+    const prev = await readCredentials(dir);
+    await writeCredentials(dir, { ...(prev ?? {}), apiKey: "new" });
+    expect(await readCredentials(dir)).toEqual({
+      apiKey: "new",
+      apiUrl: "https://a.example",
+    });
   });
 });
