@@ -187,6 +187,18 @@ export class FolderService {
   }
 
   /**
+   * Copy `cid` to an MFS path, replacing whatever is there.
+   *
+   * `files cp` fails when the destination exists, which made re-uploading any
+   * path a hard error: a folder could be published once and never updated.
+   * `files rm` is forced, so it is a no-op when nothing is there.
+   */
+  private async replaceAt(path: string, cid: string): Promise<void> {
+    await this.deps.kubo.filesRm(path).catch(() => {});
+    await this.deps.kubo.filesCp(`/ipfs/${cid}`, path);
+  }
+
+  /**
    * Write the `.econome` marker (content = folder name) if it isn't already
    * there. Its content is what makes every folder's root CID unique — two
    * folders with identical content would otherwise flush to the same CID.
@@ -309,10 +321,7 @@ export class FolderService {
       for (const f of files) {
         const base = f.path.split("/").pop() ?? f.path;
         const cid = await this.deps.kubo.addFile(f.content, base);
-        await this.deps.kubo.filesCp(
-          `/ipfs/${cid}`,
-          this.mfsPath(name, f.path),
-        );
+        await this.replaceAt(this.mfsPath(name, f.path), cid);
         added.push({ path: f.path, cid });
       }
       const rootCid = opts.commit === false ? null : await this.commit(name);
@@ -330,10 +339,7 @@ export class FolderService {
     return this.enqueue(name, async () => {
       await this.assertExists(name);
       for (const e of entries) {
-        await this.deps.kubo.filesCp(
-          `/ipfs/${e.cid}`,
-          this.mfsPath(name, e.path),
-        );
+        await this.replaceAt(this.mfsPath(name, e.path), e.cid);
       }
       return { rootCid: await this.commit(name) };
     });
