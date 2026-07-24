@@ -33,6 +33,7 @@ export function FilesFilters({
   // Skip the debounce effect on mount and whenever the URL (not the user)
   // changed the value — otherwise landing on a filtered URL re-navigates.
   const lastPushed = useRef(filters.q);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setQ(filters.q);
@@ -47,11 +48,22 @@ export function FilesFilters({
         scroll: false,
       });
     }, SEARCH_DEBOUNCE_MS);
+    timerRef.current = timer;
     return () => clearTimeout(timer);
   }, [q, filters, pageSize, router]);
 
+  // Every immediate (non-debounced) navigation must use the live local `q`
+  // state, not the `filters` prop — otherwise clicking a tag chip or
+  // Any/All right after typing (before the debounce fires) would navigate
+  // with the stale pre-keystroke search term and momentarily drop it.
   const go = (next: FileFilters) => {
-    router.replace(filesHref(next, 1, pageSize), { scroll: false });
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    const merged = { ...next, q };
+    lastPushed.current = q;
+    router.replace(filesHref(merged, 1, pageSize), { scroll: false });
   };
 
   const toggleTag = (tag: string) => {
@@ -82,9 +94,16 @@ export function FilesFilters({
             size="sm"
             className="h-8"
             onClick={() => {
+              if (timerRef.current) {
+                clearTimeout(timerRef.current);
+                timerRef.current = null;
+              }
               setQ("");
               lastPushed.current = "";
-              go({ q: "", tags: [], mode: "any" });
+              router.replace(
+                filesHref({ q: "", tags: [], mode: "any" }, 1, pageSize),
+                { scroll: false },
+              );
             }}
           >
             Clear
@@ -123,6 +142,7 @@ export function FilesFilters({
                 variant={filters.mode === "any" ? "secondary" : "ghost"}
                 size="sm"
                 className="h-7 px-2"
+                aria-pressed={filters.mode === "any"}
                 onClick={() => setMode("any")}
               >
                 Any
@@ -131,6 +151,7 @@ export function FilesFilters({
                 variant={filters.mode === "all" ? "secondary" : "ghost"}
                 size="sm"
                 className="h-7 px-2"
+                aria-pressed={filters.mode === "all"}
                 onClick={() => setMode("all")}
               >
                 All
