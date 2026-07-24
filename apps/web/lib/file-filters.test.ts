@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_FILE_SORT,
   escapeLike,
   type FileFilters,
+  type FileSortKey,
   filesHref,
   hasActiveFilters,
   parseFileFilters,
 } from "./file-filters";
+import type { Sort } from "./table-sort";
 
 describe("parseFileFilters", () => {
   it("defaults to an empty, any-mode filter", () => {
@@ -83,12 +86,15 @@ describe("filesHref", () => {
   const clean: FileFilters = { q: "", tags: [], mode: "any" };
 
   it("omits empty filters and page 1", () => {
-    expect(filesHref(clean, 1, 25)).toBe("/dashboard/files?pageSize=25");
+    expect(filesHref(clean, DEFAULT_FILE_SORT, 1, 25)).toBe(
+      "/dashboard/files?pageSize=25",
+    );
   });
 
   it("encodes every active filter", () => {
     const href = filesHref(
       { q: "annual report", tags: ["photos", "archive"], mode: "all" },
+      DEFAULT_FILE_SORT,
       3,
       50,
     );
@@ -107,7 +113,10 @@ describe("filesHref", () => {
       tags: ["photos", "archive"],
       mode: "all",
     };
-    const url = new URL(filesHref(filters, 1, 25), "http://x");
+    const url = new URL(
+      filesHref(filters, DEFAULT_FILE_SORT, 1, 25),
+      "http://x",
+    );
     expect(
       parseFileFilters({
         q: url.searchParams.get("q") ?? undefined,
@@ -115,5 +124,49 @@ describe("filesHref", () => {
         mode: url.searchParams.get("mode") ?? undefined,
       }),
     ).toEqual(filters);
+  });
+});
+
+describe("filesHref with sort", () => {
+  const clean: FileFilters = { q: "", tags: [], mode: "any" };
+
+  it("omits sort params when the sort is the default", () => {
+    expect(filesHref(clean, DEFAULT_FILE_SORT, 1, 25)).toBe(
+      "/dashboard/files?pageSize=25",
+    );
+  });
+
+  it("encodes a non-default sort", () => {
+    const sort: Sort<FileSortKey> = { key: "name", dir: "asc" };
+    const url = new URL(filesHref(clean, sort, 1, 25), "http://x");
+    expect(url.searchParams.get("sort")).toBe("name");
+    expect(url.searchParams.get("dir")).toBe("asc");
+  });
+
+  it("encodes a non-default direction on the default key", () => {
+    const url = new URL(
+      filesHref(clean, { key: "createdAt", dir: "asc" }, 1, 25),
+      "http://x",
+    );
+    expect(url.searchParams.get("sort")).toBe("createdAt");
+    expect(url.searchParams.get("dir")).toBe("asc");
+  });
+
+  it("keeps filters and pagination alongside the sort", () => {
+    const url = new URL(
+      filesHref(
+        { q: "report", tags: ["photos"], mode: "any" },
+        { key: "size", dir: "desc" },
+        2,
+        50,
+      ),
+      "http://x",
+    );
+    expect(url.searchParams.get("q")).toBe("report");
+    expect(url.searchParams.get("tags")).toBe("photos");
+    expect(url.searchParams.get("sort")).toBe("size");
+    expect(url.searchParams.get("dir")).toBe("desc");
+    expect(url.searchParams.get("page")).toBe("2");
+    expect(url.searchParams.get("pageSize")).toBe("50");
   });
 });

@@ -8,10 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   type FileFilters,
+  type FileSortKey,
   filesHref,
   hasActiveFilters,
   type TagMode,
 } from "@/lib/file-filters";
+import type { Sort } from "@/lib/table-sort";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -21,10 +23,12 @@ const SEARCH_DEBOUNCE_MS = 300;
  */
 export function FilesFilters({
   filters,
+  sort,
   availableTags,
   pageSize,
 }: {
   filters: FileFilters;
+  sort: Sort<FileSortKey>;
   availableTags: string[];
   pageSize: number;
 }) {
@@ -50,13 +54,13 @@ export function FilesFilters({
     if (q === lastPushed.current) return;
     const timer = setTimeout(() => {
       lastPushed.current = q;
-      router.replace(filesHref({ ...filters, q }, 1, pageSize), {
+      router.replace(filesHref({ ...filters, q }, sort, 1, pageSize), {
         scroll: false,
       });
     }, SEARCH_DEBOUNCE_MS);
     timerRef.current = timer;
     return () => clearTimeout(timer);
-  }, [q, filters, pageSize, router]);
+  }, [q, filters, sort, pageSize, router]);
 
   // Every immediate (non-debounced) navigation must use the live local `q`
   // state, not the `filters` prop — otherwise clicking a tag chip or
@@ -69,7 +73,7 @@ export function FilesFilters({
     }
     const merged = { ...next, q };
     lastPushed.current = q;
-    router.replace(filesHref(merged, 1, pageSize), { scroll: false });
+    router.replace(filesHref(merged, sort, 1, pageSize), { scroll: false });
   };
 
   const toggleTag = (tag: string) => {
@@ -107,7 +111,7 @@ export function FilesFilters({
               setQ("");
               lastPushed.current = "";
               router.replace(
-                filesHref({ q: "", tags: [], mode: "any" }, 1, pageSize),
+                filesHref({ q: "", tags: [], mode: "any" }, sort, 1, pageSize),
                 { scroll: false },
               );
             }}
