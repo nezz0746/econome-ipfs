@@ -1,8 +1,9 @@
 import { apiKeys, getDb, uploads } from "@repo/db";
-import { count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, type SQL, sql } from "drizzle-orm";
 import { ExternalLink } from "lucide-react";
 
 import { CopyButton } from "@/components/copy-button";
+import { FilesFilters } from "@/components/files-filters";
 import { PageHeader } from "@/components/page-header";
 import { TagBadges } from "@/components/tag-badges";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  escapeLike,
+  type FileFilters,
+  filesHref,
+  firstParam,
+  hasActiveFilters,
+  parseFileFilters,
+} from "@/lib/file-filters";
 import { timeAgo } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -37,8 +46,34 @@ function toInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-function pageHref(page: number, pageSize: number): string {
-  return `/dashboard/files?page=${page}&pageSize=${pageSize}`;
+/**
+ * SQL predicate for the active filters, or undefined when unfiltered. Applied
+ * to BOTH the page query and the fallback count so pagination maths matches
+ * the filtered set.
+ */
+function buildWhere(filters: FileFilters): SQL | undefined {
+  const clauses: SQL[] = [];
+
+  if (filters.q) {
+    // Explicit ESCAPE pairs with escapeLike() so a literal % or _ matches itself.
+    clauses.push(
+      sql`${uploads.name} ILIKE ${`%${escapeLike(filters.q)}%`} ESCAPE '\\'`,
+    );
+  }
+
+  if (filters.tags.length > 0) {
+    const tagArray = sql`ARRAY[${sql.join(
+      filters.tags.map((tag) => sql`${tag}`),
+      sql`, `,
+    )}]::text[]`;
+    clauses.push(
+      filters.mode === "all"
+        ? sql`${uploads.tags} @> ${tagArray}` // contains every selected tag
+        : sql`${uploads.tags} && ${tagArray}`, // overlaps any selected tag
+    );
+  }
+
+  return clauses.length === 0 ? undefined : and(...clauses);
 }
 
 /**
@@ -48,6 +83,7 @@ function pageHref(page: number, pageSize: number): string {
  */
 function selectPage(
   db: ReturnType<typeof getDb>,
+  where: SQL | undefined,
   offset: number,
   limit: number,
 ) {
@@ -66,6 +102,7 @@ function selectPage(
     })
     .from(uploads)
     .leftJoin(apiKeys, eq(uploads.apiKeyId, apiKeys.id))
+    .where(where)
     .orderBy(desc(uploads.createdAt))
     .limit(limit)
     .offset(offset);
@@ -74,22 +111,42 @@ function selectPage(
 export default async function FilesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; pageSize?: string }>;
+  searchParams: Promise<{
+    page?: string | string[];
+    pageSize?: string | string[];
+    q?: string | string[];
+    tags?: string | string[];
+    mode?: string | string[];
+  }>;
 }) {
   const params = await searchParams;
 
-  const requestedSize = toInt(params.pageSize, DEFAULT_PAGE_SIZE);
+  const requestedSize = toInt(firstParam(params.pageSize), DEFAULT_PAGE_SIZE);
   const pageSize = PAGE_SIZES.includes(
     requestedSize as (typeof PAGE_SIZES)[number],
   )
     ? requestedSize
     : DEFAULT_PAGE_SIZE;
 
+  const filters = parseFileFilters(params);
+  const where = buildWhere(filters);
+
   const db = getDb();
-  const requestedPage = toInt(params.page, 1);
+  const requestedPage = toInt(firstParam(params.page), 1);
+
+  // Tag chips offer exactly the tags present on files — never a stale list.
+  const tagRows = await db
+    .selectDistinct({ tag: sql<string>`unnest(${uploads.tags})` })
+    .from(uploads);
+  const availableTags = tagRows.map((row) => row.tag).sort();
 
   // Common path: fetch the requested page and its total in one round-trip.
-  let files = await selectPage(db, (requestedPage - 1) * pageSize, pageSize);
+  let files = await selectPage(
+    db,
+    where,
+    (requestedPage - 1) * pageSize,
+    pageSize,
+  );
   let total: number;
   let page: number;
 
@@ -99,23 +156,27 @@ export default async function FilesPage({
     total = firstFile.total;
     page = requestedPage;
   } else {
-    // Empty page — either the table is empty or the requested page is past the
-    // end. Resolve the true total, clamp to the last page, and fetch it. This
-    // preserves the "out-of-range page shows the last page" behaviour.
-    const [totalRow] = await db.select({ total: count() }).from(uploads);
+    // Empty page — either nothing matches or the requested page is past the
+    // end. Resolve the true (filtered) total, clamp to the last page, and
+    // fetch it. Preserves the "out-of-range page shows the last page" behaviour.
+    const [totalRow] = await db
+      .select({ total: count() })
+      .from(uploads)
+      .where(where);
     total = totalRow?.total ?? 0;
     const lastPage = Math.max(1, Math.ceil(total / pageSize));
     page = Math.min(requestedPage, lastPage);
     files =
       total === 0
         ? files
-        : await selectPage(db, (page - 1) * pageSize, pageSize);
+        : await selectPage(db, where, (page - 1) * pageSize, pageSize);
   }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const offset = (page - 1) * pageSize;
   const firstRow = total === 0 ? 0 : offset + 1;
   const lastRow = offset + files.length;
+  const filtered = hasActiveFilters(filters);
 
   return (
     <>
@@ -126,11 +187,33 @@ export default async function FilesPage({
 
       <Card>
         <CardContent>
+          <FilesFilters
+            filters={filters}
+            availableTags={availableTags}
+            pageSize={pageSize}
+          />
+
           {total === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No files yet. Upload one from the Test Upload page or via the
-              ingest API.
-            </p>
+            filtered ? (
+              <p className="text-sm text-muted-foreground">
+                No files match these filters.{" "}
+                <a
+                  className="underline underline-offset-4"
+                  href={filesHref(
+                    { q: "", tags: [], mode: "any" },
+                    1,
+                    pageSize,
+                  )}
+                >
+                  Clear filters
+                </a>
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No files yet. Upload one from the Test Upload page or via the
+                ingest API.
+              </p>
+            )
           ) : (
             <>
               <Table>
@@ -206,7 +289,7 @@ export default async function FilesPage({
                         variant={size === pageSize ? "secondary" : "ghost"}
                         size="sm"
                         className="h-7 px-2 tabular-nums"
-                        render={<a href={pageHref(1, size)} />}
+                        render={<a href={filesHref(filters, 1, size)} />}
                       >
                         {size}
                       </Button>
@@ -223,7 +306,9 @@ export default async function FilesPage({
                       <Button
                         variant="outline"
                         size="sm"
-                        render={<a href={pageHref(page - 1, pageSize)} />}
+                        render={
+                          <a href={filesHref(filters, page - 1, pageSize)} />
+                        }
                       >
                         Previous
                       </Button>
@@ -239,7 +324,9 @@ export default async function FilesPage({
                       <Button
                         variant="outline"
                         size="sm"
-                        render={<a href={pageHref(page + 1, pageSize)} />}
+                        render={
+                          <a href={filesHref(filters, page + 1, pageSize)} />
+                        }
                       >
                         Next
                       </Button>
