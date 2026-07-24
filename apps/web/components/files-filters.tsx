@@ -38,8 +38,10 @@ export function FilesFilters({
   useEffect(() => {
     // Ignore the echo of our own navigation; only adopt genuinely external
     // changes (back/forward, hand-edited URL), which would otherwise clobber
-    // characters typed while the server response was in flight.
-    if (filters.q === lastPushed.current) return;
+    // characters typed while the server response was in flight. Compare
+    // trimmed: the server echoes a trimmed q, so a trailing space typed
+    // mid-phrase would otherwise be stripped from under the user.
+    if (filters.q === lastPushed.current.trim()) return;
     setQ(filters.q);
     lastPushed.current = filters.q;
   }, [filters.q]);
