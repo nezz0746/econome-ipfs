@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { CreateFolderForm } from "@/components/create-folder-form";
 import { PageHeader } from "@/components/page-header";
+import { SortableHeader } from "@/components/sortable-header";
 import { TagBadges } from "@/components/tag-badges";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,13 +17,44 @@ import {
 import { deleteFolderAction } from "@/lib/actions";
 import { getFolders } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
+import {
+  type FolderSortKey,
+  nextDir,
+  parseSort,
+  type Sort,
+  type SortDir,
+  sortFolders,
+} from "@/lib/table-sort";
 
 const GATEWAY_URL = process.env.IPFS_GATEWAY_URL ?? "http://localhost:8081";
 
 export const dynamic = "force-dynamic";
 
-export default async function FoldersPage() {
-  const folders = await getFolders();
+const FOLDER_SORT_KEYS: readonly FolderSortKey[] = ["name", "size"] as const;
+/** Alphabetical by default — MFS listing order is not guaranteed. */
+const DEFAULT_FOLDER_SORT: Sort<FolderSortKey> = { key: "name", dir: "asc" };
+
+function foldersHref(sort: Sort<FolderSortKey>): string {
+  if (
+    sort.key === DEFAULT_FOLDER_SORT.key &&
+    sort.dir === DEFAULT_FOLDER_SORT.dir
+  ) {
+    return "/dashboard/folders";
+  }
+  return `/dashboard/folders?sort=${sort.key}&dir=${sort.dir}`;
+}
+
+export default async function FoldersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string | string[]; dir?: string | string[] }>;
+}) {
+  const params = await searchParams;
+  const sort = parseSort(params, FOLDER_SORT_KEYS, DEFAULT_FOLDER_SORT);
+  const folders = sortFolders(await getFolders(), sort);
+
+  const sortHref = (key: FolderSortKey, defaultDir: SortDir) =>
+    foldersHref({ key, dir: nextDir(sort, key, defaultDir) });
 
   return (
     <>
@@ -47,9 +79,19 @@ export default async function FoldersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
+                  <SortableHeader
+                    label="Name"
+                    href={sortHref("name", "asc")}
+                    active={sort.key === "name"}
+                    dir={sort.dir}
+                  />
                   <TableHead>Tags</TableHead>
-                  <TableHead>Size</TableHead>
+                  <SortableHeader
+                    label="Size"
+                    href={sortHref("size", "desc")}
+                    active={sort.key === "size"}
+                    dir={sort.dir}
+                  />
                   <TableHead>Links</TableHead>
                   <TableHead className="text-right">Delete</TableHead>
                 </TableRow>
