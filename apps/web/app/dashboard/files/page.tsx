@@ -1,10 +1,11 @@
 import { apiKeys, getDb, uploads } from "@repo/db";
-import { and, count, desc, eq, type SQL, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, type SQL, sql } from "drizzle-orm";
 import { ExternalLink } from "lucide-react";
 
 import { CopyButton } from "@/components/copy-button";
 import { FilesFilters } from "@/components/files-filters";
 import { PageHeader } from "@/components/page-header";
+import { SortableHeader } from "@/components/sortable-header";
 import { TagBadges } from "@/components/tag-badges";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,14 +18,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  DEFAULT_FILE_SORT,
   escapeLike,
+  FILE_SORT_KEYS,
   type FileFilters,
+  type FileSortKey,
   filesHref,
   firstParam,
   hasActiveFilters,
   parseFileFilters,
 } from "@/lib/file-filters";
 import { timeAgo } from "@/lib/format";
+import { nextDir, parseSort, type Sort, type SortDir } from "@/lib/table-sort";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +82,30 @@ function buildWhere(filters: FileFilters): SQL | undefined {
 }
 
 /**
+ * ORDER BY for the requested sort. `name` is nullable, so NULLS LAST is
+ * pinned in BOTH directions (Postgres defaults are asymmetric and would
+ * float unnamed files to the top on a descending sort). Every ordering ends
+ * with `id` as a stable tiebreaker: without it, ties in a non-unique column
+ * let OFFSET pagination duplicate or skip rows across page boundaries.
+ */
+function orderFor(sort: Sort<FileSortKey>): SQL[] {
+  const dir = sort.dir === "asc" ? asc : desc;
+  // Spelled out per direction rather than interpolating the direction into
+  // the fragment — no raw string ever reaches SQL.
+  const nameOrder =
+    sort.dir === "asc"
+      ? sql`${uploads.name} ASC NULLS LAST`
+      : sql`${uploads.name} DESC NULLS LAST`;
+  const primary =
+    sort.key === "name"
+      ? nameOrder
+      : sort.key === "size"
+        ? dir(uploads.size)
+        : dir(uploads.createdAt);
+  return [primary, asc(uploads.id)];
+}
+
+/**
  * One page of uploads plus the unpaginated total, resolved in a single query
  * via `count(*) OVER ()`. The window count is evaluated over the full filtered
  * set, so it is only present when the page has at least one row.
@@ -84,6 +113,7 @@ function buildWhere(filters: FileFilters): SQL | undefined {
 function selectPage(
   db: ReturnType<typeof getDb>,
   where: SQL | undefined,
+  sort: Sort<FileSortKey>,
   offset: number,
   limit: number,
 ) {
@@ -103,7 +133,7 @@ function selectPage(
     .from(uploads)
     .leftJoin(apiKeys, eq(uploads.apiKeyId, apiKeys.id))
     .where(where)
-    .orderBy(desc(uploads.createdAt))
+    .orderBy(...orderFor(sort))
     .limit(limit)
     .offset(offset);
 }
@@ -117,6 +147,8 @@ export default async function FilesPage({
     q?: string | string[];
     tags?: string | string[];
     mode?: string | string[];
+    sort?: string | string[];
+    dir?: string | string[];
   }>;
 }) {
   const params = await searchParams;
@@ -129,6 +161,7 @@ export default async function FilesPage({
     : DEFAULT_PAGE_SIZE;
 
   const filters = parseFileFilters(params);
+  const sort = parseSort(params, FILE_SORT_KEYS, DEFAULT_FILE_SORT);
   const where = buildWhere(filters);
 
   const db = getDb();
@@ -144,6 +177,7 @@ export default async function FilesPage({
   let files = await selectPage(
     db,
     where,
+    sort,
     (requestedPage - 1) * pageSize,
     pageSize,
   );
@@ -169,7 +203,7 @@ export default async function FilesPage({
     files =
       total === 0
         ? files
-        : await selectPage(db, where, (page - 1) * pageSize, pageSize);
+        : await selectPage(db, where, sort, (page - 1) * pageSize, pageSize);
   }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -177,6 +211,14 @@ export default async function FilesPage({
   const firstRow = total === 0 ? 0 : offset + 1;
   const lastRow = offset + files.length;
   const filtered = hasActiveFilters(filters);
+  // Sorting resets to page 1: a page number means nothing under a new order.
+  const sortHref = (key: FileSortKey, defaultDir: SortDir) =>
+    filesHref(
+      filters,
+      { key, dir: nextDir(sort, key, defaultDir) },
+      1,
+      pageSize,
+    );
 
   return (
     <>
@@ -189,6 +231,7 @@ export default async function FilesPage({
         <CardContent>
           <FilesFilters
             filters={filters}
+            sort={sort}
             availableTags={availableTags}
             pageSize={pageSize}
           />
@@ -201,6 +244,7 @@ export default async function FilesPage({
                   className="underline underline-offset-4"
                   href={filesHref(
                     { q: "", tags: [], mode: "any" },
+                    sort,
                     1,
                     pageSize,
                   )}
@@ -219,12 +263,27 @@ export default async function FilesPage({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
+                    <SortableHeader
+                      label="Name"
+                      href={sortHref("name", "asc")}
+                      active={sort.key === "name"}
+                      dir={sort.dir}
+                    />
                     <TableHead>CID</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead>Tags</TableHead>
-                    <TableHead>Size</TableHead>
-                    <TableHead>Added</TableHead>
+                    <SortableHeader
+                      label="Size"
+                      href={sortHref("size", "desc")}
+                      active={sort.key === "size"}
+                      dir={sort.dir}
+                    />
+                    <SortableHeader
+                      label="Added"
+                      href={sortHref("createdAt", "desc")}
+                      active={sort.key === "createdAt"}
+                      dir={sort.dir}
+                    />
                     <TableHead className="text-right">Open</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -289,7 +348,7 @@ export default async function FilesPage({
                         variant={size === pageSize ? "secondary" : "ghost"}
                         size="sm"
                         className="h-7 px-2 tabular-nums"
-                        render={<a href={filesHref(filters, 1, size)} />}
+                        render={<a href={filesHref(filters, sort, 1, size)} />}
                       >
                         {size}
                       </Button>
@@ -307,7 +366,9 @@ export default async function FilesPage({
                         variant="outline"
                         size="sm"
                         render={
-                          <a href={filesHref(filters, page - 1, pageSize)} />
+                          <a
+                            href={filesHref(filters, sort, page - 1, pageSize)}
+                          />
                         }
                       >
                         Previous
@@ -325,7 +386,9 @@ export default async function FilesPage({
                         variant="outline"
                         size="sm"
                         render={
-                          <a href={filesHref(filters, page + 1, pageSize)} />
+                          <a
+                            href={filesHref(filters, sort, page + 1, pageSize)}
+                          />
                         }
                       >
                         Next

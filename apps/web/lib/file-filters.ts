@@ -1,7 +1,21 @@
+import type { Sort } from "@/lib/table-sort";
 import { parseTags } from "@/lib/tags";
 
 /** How multiple selected tags combine. */
 export type TagMode = "any" | "all";
+
+/** Columns the Files table can be ordered by. */
+export type FileSortKey = "name" | "size" | "createdAt";
+export const FILE_SORT_KEYS: readonly FileSortKey[] = [
+  "name",
+  "size",
+  "createdAt",
+] as const;
+/** Newest first — the historical default, unchanged. */
+export const DEFAULT_FILE_SORT: Sort<FileSortKey> = {
+  key: "createdAt",
+  dir: "desc",
+};
 
 export interface FileFilters {
   /** Case-insensitive substring matched against the file name. */
@@ -52,9 +66,10 @@ export function hasActiveFilters(filters: FileFilters): boolean {
   return filters.q !== "" || filters.tags.length > 0;
 }
 
-/** Files page URL preserving every filter plus pagination. */
+/** Files page URL preserving every filter, the sort, and pagination. */
 export function filesHref(
   filters: FileFilters,
+  sort: Sort<FileSortKey>,
   page: number,
   pageSize: number,
 ): string {
@@ -62,6 +77,14 @@ export function filesHref(
   if (filters.q) params.set("q", filters.q);
   if (filters.tags.length > 0) params.set("tags", filters.tags.join(","));
   if (filters.mode === "all") params.set("mode", "all");
+  // Omit the default ordering so a clean view keeps a clean URL.
+  if (
+    sort.key !== DEFAULT_FILE_SORT.key ||
+    sort.dir !== DEFAULT_FILE_SORT.dir
+  ) {
+    params.set("sort", sort.key);
+    params.set("dir", sort.dir);
+  }
   if (page > 1) params.set("page", String(page));
   params.set("pageSize", String(pageSize));
   return `/dashboard/files?${params.toString()}`;
