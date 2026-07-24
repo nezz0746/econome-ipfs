@@ -20,6 +20,7 @@ import {
   escapeLike,
   type FileFilters,
   filesHref,
+  firstParam,
   hasActiveFilters,
   parseFileFilters,
 } from "@/lib/file-filters";
@@ -111,16 +112,16 @@ export default async function FilesPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    page?: string;
-    pageSize?: string;
-    q?: string;
-    tags?: string;
-    mode?: string;
+    page?: string | string[];
+    pageSize?: string | string[];
+    q?: string | string[];
+    tags?: string | string[];
+    mode?: string | string[];
   }>;
 }) {
   const params = await searchParams;
 
-  const requestedSize = toInt(params.pageSize, DEFAULT_PAGE_SIZE);
+  const requestedSize = toInt(firstParam(params.pageSize), DEFAULT_PAGE_SIZE);
   const pageSize = PAGE_SIZES.includes(
     requestedSize as (typeof PAGE_SIZES)[number],
   )
@@ -131,7 +132,7 @@ export default async function FilesPage({
   const where = buildWhere(filters);
 
   const db = getDb();
-  const requestedPage = toInt(params.page, 1);
+  const requestedPage = toInt(firstParam(params.page), 1);
 
   // Tag chips offer exactly the tags present on files — never a stale list.
   const tagRows = await db

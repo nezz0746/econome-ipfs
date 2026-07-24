@@ -36,6 +36,18 @@ describe("parseFileFilters", () => {
     expect(parseFileFilters({ mode: "bogus" }).mode).toBe("any");
     expect(parseFileFilters({}).mode).toBe("any");
   });
+
+  it("tolerates repeated query params delivered as arrays, without throwing", () => {
+    // Next.js App Router delivers repeated query keys (?q=a&q=b) as string[].
+    expect(() => parseFileFilters({ q: ["a", "b"] })).not.toThrow();
+    expect(parseFileFilters({ q: ["a", "b"] }).q).toBe("a");
+
+    expect(() => parseFileFilters({ mode: ["all"] })).not.toThrow();
+    expect(parseFileFilters({ mode: ["all"] }).mode).toBe("all");
+
+    expect(() => parseFileFilters({ q: [] })).not.toThrow();
+    expect(parseFileFilters({ q: [] }).q).toBe("");
+  });
 });
 
 describe("escapeLike", () => {

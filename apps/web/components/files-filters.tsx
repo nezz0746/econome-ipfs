@@ -36,6 +36,10 @@ export function FilesFilters({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // Ignore the echo of our own navigation; only adopt genuinely external
+    // changes (back/forward, hand-edited URL), which would otherwise clobber
+    // characters typed while the server response was in flight.
+    if (filters.q === lastPushed.current) return;
     setQ(filters.q);
     lastPushed.current = filters.q;
   }, [filters.q]);

@@ -11,20 +11,30 @@ export interface FileFilters {
 }
 
 /**
+ * Next delivers repeated query keys (?q=a&q=b) as arrays; take the first
+ * usable value. Anything that isn't a string (missing, array of non-strings,
+ * empty array) coerces to "" rather than throwing.
+ */
+export function firstParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : "";
+  return typeof value === "string" ? value : "";
+}
+
+/**
  * Parse the Files page query params into a filter state. Invalid input is
  * coerced to "no filter" rather than throwing: a hand-edited URL should show
  * unfiltered files, not an error page.
  */
 export function parseFileFilters(params: {
-  q?: string;
-  tags?: string;
-  mode?: string;
+  q?: string | string[];
+  tags?: string | string[];
+  mode?: string | string[];
 }): FileFilters {
   return {
-    q: (params.q ?? "").trim(),
+    q: firstParam(params.q).trim(),
     // parseTags returns null when any entry is not a valid slug.
     tags: parseTags(params.tags) ?? [],
-    mode: params.mode === "all" ? "all" : "any",
+    mode: firstParam(params.mode) === "all" ? "all" : "any",
   };
 }
 
